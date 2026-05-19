@@ -728,6 +728,40 @@ class OrderController extends Controller
                 ]);
             }
 
+            $submittedOrderItemIds = collect($request->items)
+                ->pluck('id')
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+
+            if ($submittedOrderItemIds->isNotEmpty()) {
+                $ownedSubmittedItemCount = $order->items()
+                    ->whereIn('id', $submittedOrderItemIds)
+                    ->count();
+
+                if ($ownedSubmittedItemCount !== $submittedOrderItemIds->count()) {
+                    throw ValidationException::withMessages([
+                        'items' => ['One or more order items do not belong to this order.'],
+                    ]);
+                }
+            }
+
+            $removedOrderItemIds = $order->items()
+                ->when(
+                    $submittedOrderItemIds->isNotEmpty(),
+                    fn ($query) => $query->whereNotIn('id', $submittedOrderItemIds)
+                )
+                ->pluck('id');
+
+            if ($removedOrderItemIds->isNotEmpty()) {
+                DB::table('vendor_orders')
+                    ->whereIn('order_item_id', $removedOrderItemIds)
+                    ->delete();
+
+                OrderItem::whereIn('id', $removedOrderItemIds)->delete();
+            }
+
             $order->update(array_merge([
                 'payment_type' => $paymentType,
                 'installment_count' => in_array($paymentType, ['weekly', 'monthly'], true)
@@ -746,7 +780,7 @@ class OrderController extends Controller
                 $variantSnapshot = $this->buildVariantSnapshotFromItem($itemData);
 
                 if (!empty($itemData['id'])) {
-                    $orderItem = OrderItem::find($itemData['id']);
+                    $orderItem = $order->items()->whereKey($itemData['id'])->first();
                     $orderItem?->update([
                         'product_id' => $snapshot['product_id'],
                         'quantity' => $snapshot['quantity'],
@@ -789,6 +823,7 @@ class OrderController extends Controller
             return response()->json([
                 'error' => $errors['custom_amount'][0]
                     ?? $errors['installment_count'][0]
+                    ?? $errors['items'][0]
                     ?? 'Invalid request data.',
             ], 422);
         } catch (\Throwable $e) {
@@ -1504,18 +1539,17 @@ class OrderController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        // Catch-up assignment for orders that became ready before assignment logic ran.
-        // This keeps available-pickups populated with rider-specific orders.
+        // Catch-up assignment for ready orders, including stale offers created before
+        // assignment used vendor pickup coordinates.
         $assignmentService = app(RiderAssignmentService::class);
-        $unassignedReadyOrders = Order::where('status', 'ready')
+        $readyOrders = Order::where('status', 'ready')
             ->paidForFulfillment()
-            ->whereNull('accepted_by')
             ->latest()
             ->take(50)
             ->get();
 
-        foreach ($unassignedReadyOrders as $readyOrder) {
-            $assignmentService->assignNearestRider($readyOrder);
+        foreach ($readyOrders as $readyOrder) {
+            $assignmentService->assignNearestRider($readyOrder, true);
         }
 
         $orders = Order::with(['items.vendorOrders.vendor', 'user'])

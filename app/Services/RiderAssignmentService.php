@@ -9,18 +9,18 @@ use Illuminate\Support\Facades\Log;
 
 class RiderAssignmentService
 {
-    public function assignNearestRider(Order $order): ?User
+    public function assignNearestRider(Order $order, bool $forceReassign = false): ?User
     {
         if (!$order->isPaidForFulfillment()) {
             return null;
         }
 
-        if ($order->accepted_by) {
+        if ($order->accepted_by && !$forceReassign) {
             return User::find($order->accepted_by);
         }
 
-        [$deliveryLat, $deliveryLng] = $this->resolveDeliveryCoordinates($order);
-        if (is_null($deliveryLat) || is_null($deliveryLng) || !$this->isValidCoordinates($deliveryLat, $deliveryLng)) {
+        [$pickupLat, $pickupLng] = $this->resolvePickupCoordinates($order);
+        if (is_null($pickupLat) || is_null($pickupLng) || !$this->isValidCoordinates($pickupLat, $pickupLng)) {
             return null;
         }
 
@@ -38,7 +38,7 @@ class RiderAssignmentService
         }
 
         $candidates = $riders
-            ->map(function (User $rider) use ($deliveryLat, $deliveryLng) {
+            ->map(function (User $rider) use ($pickupLat, $pickupLng) {
                 $riderLat = (float) $rider->latitude;
                 $riderLng = (float) $rider->longitude;
 
@@ -49,8 +49,8 @@ class RiderAssignmentService
                 $distanceKm = $this->haversineDistanceKm(
                     $riderLat,
                     $riderLng,
-                    $deliveryLat,
-                    $deliveryLng
+                    $pickupLat,
+                    $pickupLng
                 );
 
                 return [
@@ -70,7 +70,7 @@ class RiderAssignmentService
             return null;
         }
 
-        $selected = $this->pickByRoadDistance($withinRadius, $deliveryLat, $deliveryLng, $radiusKm, $order->id);
+        $selected = $this->pickByRoadDistance($withinRadius, $pickupLat, $pickupLng, $radiusKm, $order->id);
         if (!$selected) {
             $selected = $withinRadius->first();
         }
@@ -81,6 +81,44 @@ class RiderAssignmentService
         $order->save();
 
         return $rider;
+    }
+
+    private function resolvePickupCoordinates(Order $order): array
+    {
+        $order->loadMissing('vendorOrders.vendor');
+
+        foreach ($order->vendorOrders as $vendorOrder) {
+            $vendorLat = $vendorOrder->vendor?->latitude;
+            $vendorLng = $vendorOrder->vendor?->longitude;
+
+            if (is_null($vendorLat) || is_null($vendorLng)) {
+                continue;
+            }
+
+            $lat = (float) $vendorLat;
+            $lng = (float) $vendorLng;
+
+            if (!$this->isValidCoordinates($lat, $lng)) {
+                continue;
+            }
+
+            if ((string) $order->pickup_latitude !== (string) $vendorLat || (string) $order->pickup_longitude !== (string) $vendorLng) {
+                $order->pickup_latitude = $lat;
+                $order->pickup_longitude = $lng;
+                $order->save();
+            }
+
+            return [$lat, $lng];
+        }
+
+        $lat = $order->pickup_latitude ? (float) $order->pickup_latitude : null;
+        $lng = $order->pickup_longitude ? (float) $order->pickup_longitude : null;
+
+        if (!is_null($lat) && !is_null($lng) && $this->isValidCoordinates($lat, $lng)) {
+            return [$lat, $lng];
+        }
+
+        return $this->resolveDeliveryCoordinates($order);
     }
 
     private function resolveDeliveryCoordinates(Order $order): array
