@@ -50,7 +50,7 @@
         <h2>Hello {{ $user->firstname ?? 'there' }},</h2>
         <p>You requested a password reset. Click the button below to reset your password:</p>
 
-        <a href="http://localhost:5173/auth/reset-password?token={{ urlencode($token) }}&email={{ urlencode($user->email) }}" class="btn">
+        <a href="https://chopeasy.ng/auth/reset-password?token={{ urlencode($token) }}&email={{ urlencode($user->email) }}" class="btn">
             Reset Password
         </a>
 
@@ -59,7 +59,7 @@
 
         <div class="footer">
             Regards,<br>
-            Pride of Africa Team
+         ChopEasy Team
         </div>
     </div>
 </body>

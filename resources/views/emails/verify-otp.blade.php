@@ -66,7 +66,7 @@
 
         <div class="footer">
             Regards,<br>
-            Pride of Africa
+            ChopEasy Ltd
         </div>
     </div>
 </body>
