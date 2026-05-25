@@ -130,17 +130,19 @@ class GeoLocationService
      * @return array [$lat, $lng]
      */
     public function getCoordinatesFromAddress(string $address): array
-    {
-        $response = Http::get('https://maps.googleapis.com/maps/api/geocode/json', [
-            'address' => $address,
-            'key' => $this->apiKey,
-        ])->json();
+{
+    $response = Http::get('https://api.geoapify.com/v1/geocode/search', [
+        'text'   => $address,
+        'filter' => 'countrycode:ng',
+        'limit'  => 1,
+        'apiKey' => config('services.geoapify.key'),
+    ])->json();
 
-        if (!empty($response['results'][0]['geometry']['location'])) {
-            $location = $response['results'][0]['geometry']['location'];
-            return [$location['lat'], $location['lng']];
-        }
-
-        return [null, null];
+    if (!empty($response['features'][0]['geometry']['coordinates'])) {
+        [$lon, $lat] = $response['features'][0]['geometry']['coordinates'];
+        return [$lat, $lon]; // swapped — Geoapify returns [lon, lat]
     }
+
+    return [null, null];
+}
 }

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\v1\Users;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
 
 class PostalCodeController extends Controller
 {
@@ -73,185 +74,170 @@ class PostalCodeController extends Controller
         ]);
 
         $query = $request->query('query');
-        $googleApiKey = config('services.google_maps.api_key');
 
-        // Try Google Places Autocomplete API first (same as Glovo uses)
-        if ($googleApiKey) {
-            try {
-                $response = Http::get('https://maps.googleapis.com/maps/api/place/autocomplete/json', [
-                    'input' => $query,
-                    'key' => $googleApiKey,
-                    'components' => 'country:ng', // Restrict to Nigeria
-                    'types' => 'address', // Focus on addresses
-                ]);
+        try {
+            $response = Http::get('https://api.geoapify.com/v1/geocode/autocomplete', [
+                'text'   => $query,
+                // Bounding box locked to Lagos state only [lon_min,lat_min,lon_max,lat_max]
+                'filter' => 'rect:2.7774,6.3573,3.9480,6.7021',
+                'bias'   => 'proximity:3.3792,6.5244',
+                'limit'  => 5,
+                'lang'   => 'en',
+                'apiKey' => config('services.geoapify.key'),
+            ]);
 
-                if ($response->successful()) {
-                    $data = $response->json();
-                    
-                    if (isset($data['predictions']) && !empty($data['predictions'])) {
-                        // Filter predictions to Lagos addresses first (cheaper than fetching details for all)
-                        $lagosPredictions = collect($data['predictions'])->filter(function ($prediction) {
-                            $description = strtolower($prediction['description'] ?? '');
-                            $terms = collect($prediction['terms'] ?? [])->pluck('value')->implode(' ');
-                            $allText = strtolower($description . ' ' . $terms);
-                            return strpos($allText, 'lagos') !== false;
-                        })->take(10); // Limit to 10 to reduce API calls
-
-                        $suggestions = $lagosPredictions->map(function ($prediction) use ($googleApiKey) {
-                            $placeId = $prediction['place_id'];
-                            $fullAddress = $prediction['description'];
-                            $title = $prediction['structured_formatting']['main_text'] ?? $fullAddress;
-                            $subtitle = $prediction['structured_formatting']['secondary_text'] ?? 'Lagos, Nigeria';
-                            
-                            // Extract basic info from terms (without API call)
-                            $terms = collect($prediction['terms'] ?? []);
-                            $city = null;
-                            $state = null;
-                            $country = null;
-                            
-                            // Try to extract city/state from terms
-                            foreach ($terms as $term) {
-                                $termValue = strtolower($term['value'] ?? '');
-                                if (strpos($termValue, 'lagos') !== false && !$state) {
-                                    $state = 'Lagos';
-                                }
-                                if (!$city && $termValue !== 'lagos' && $termValue !== 'nigeria') {
-                                    $city = $term['value'];
-                                }
-                            }
-                            
-                            // Fetch place details for coordinates (only for filtered results)
-                            $lat = null;
-                            $lon = null;
-                            $postcode = null;
-                            
-                            try {
-                                $detailsResponse = Http::get('https://maps.googleapis.com/maps/api/place/details/json', [
-                                    'place_id' => $placeId,
-                                    'key' => $googleApiKey,
-                                    'fields' => 'geometry,formatted_address,address_components',
-                                ]);
-
-                                if ($detailsResponse->successful()) {
-                                    $details = $detailsResponse->json();
-                                    if (isset($details['result'])) {
-                                        $result = $details['result'];
-                                        
-                                        // Extract coordinates
-                                        if (isset($result['geometry']['location'])) {
-                                            $lat = $result['geometry']['location']['lat'];
-                                            $lon = $result['geometry']['location']['lng'];
-                                        }
-
-                                        // Extract address components
-                                        if (isset($result['address_components'])) {
-                                            foreach ($result['address_components'] as $component) {
-                                                $types = $component['types'] ?? [];
-                                                
-                                                if (in_array('postal_code', $types)) {
-                                                    $postcode = $component['long_name'];
-                                                }
-                                                if (!$city && (in_array('locality', $types) || in_array('administrative_area_level_2', $types))) {
-                                                    $city = $component['long_name'];
-                                                }
-                                                if (!$state && in_array('administrative_area_level_1', $types)) {
-                                                    $state = $component['long_name'];
-                                                }
-                                                if (!$country && in_array('country', $types)) {
-                                                    $country = $component['long_name'];
-                                                }
-                                            }
-                                        }
-
-                                        // Use formatted_address if available
-                                        if (isset($result['formatted_address'])) {
-                                            $fullAddress = $result['formatted_address'];
-                                        }
-                                    }
-                                }
-                            } catch (\Exception $e) {
-                                // Continue without details if API call fails
-                            }
-
-                            return [
-                                'place_id' => $placeId,
-                                'display_name' => $fullAddress,
-                                'title' => $title,
-                                'subtitle' => $subtitle,
-                                'city' => $city,
-                                'state' => $state ?? 'Lagos',
-                                'country' => $country ?? 'Nigeria',
-                                'postcode' => $postcode,
-                                'lat' => $lat,
-                                'lon' => $lon,
-                            ];
-                        })->filter(); // Remove any null values
-
-                        if ($suggestions->isNotEmpty()) {
-                            return response()->json([
-                                'success' => true,
-                                'suggestions' => $suggestions->values(),
-                            ]);
-                        }
-                    }
-                }
-            } catch (\Exception $e) {
-                // Fall through to OpenStreetMap if Google API fails
+            if (!$response->successful()) {
+                return response()->json([
+                    'success'     => false,
+                    'suggestions' => [],
+                    'message'     => 'Could not fetch address suggestions.',
+                ], 500);
             }
-        }
 
-        // Fallback to OpenStreetMap Nominatim API
-        $query = urlencode($query);
-        $response = Http::withHeaders([
-            'User-Agent' => 'MyDeliveryApp/1.0 (ilesanmiolushola9@gmail.com)'
-        ])->get("https://nominatim.openstreetmap.org/search", [
-            'q' => $query,
-            'format' => 'json',
-            'addressdetails' => 1,
-            'limit' => 100,
-            'countrycodes' => 'ng', // Nigeria
-        ]);
+            $features = $response->json('features') ?? [];
 
-        if ($response->failed()) {
+            if (empty($features)) {
+                return response()->json([
+                    'success'     => true,
+                    'suggestions' => [],
+                    'message'     => 'No Lagos addresses found. Try a more specific address.',
+                ]);
+            }
+
+            $suggestions = collect($features)
+                ->map(function ($feature) {
+                    $props  = $feature['properties'] ?? [];
+                    $coords = $feature['geometry']['coordinates'] ?? [null, null];
+
+                    return [
+                        'display_name' => $props['formatted']  ?? '',
+                        'lat'          => $coords[1],
+                        'lon'          => $coords[0],
+                        'city'         => $props['city']     ?? $props['town']    ?? $props['village'] ?? null,
+                        'state'        => $props['state']    ?? null,
+                        'country'      => $props['country']  ?? null,
+                        'postcode'     => $props['postcode'] ?? null,
+                    ];
+                })
+                ->filter(fn($s) => !empty($s['display_name']))
+                ->values();
+
             return response()->json([
-                'success' => false,
-                'message' => 'Error fetching suggestions',
+                'success'     => true,
+                'suggestions' => $suggestions,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success'     => false,
+                'suggestions' => [],
+                'message'     => 'Service unavailable. Please try again.',
             ], 500);
         }
+    }
 
-        $results = $response->json();
-
-        // Filter to only Lagos addresses
-        $lagosResults = collect($results)->filter(function ($item) {
-            $address = $item['address'] ?? [];
-            $city = strtolower($address['city'] ?? $address['town'] ?? $address['village'] ?? '');
-            $state = strtolower($address['state'] ?? '');
-            return strpos($city, 'lagos') !== false || strpos($state, 'lagos') !== false;
-        });
-
-        $suggestions = $lagosResults->map(function ($item) {
-            $address = $item['address'] ?? [];
-            $postcode = $address['postcode'] ?? null;
-
-            // Fallback: extract postcode from display_name
-            if (!$postcode && preg_match('/[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}/i', $item['display_name'], $matches)) {
-                $postcode = $matches[0];
-            }
-
-            return [
-                'display_name' => $item['display_name'],
-                'city' => $address['city'] ?? $address['town'] ?? $address['village'] ?? null,
-                'state' => $address['state'] ?? null,
-                'country' => $address['country'] ?? null,
-                'postcode' => $postcode,
-                'lat' => $item['lat'],
-                'lon' => $item['lon'],
-            ];
-        });
-
-        return response()->json([
-            'success' => true,
-            'suggestions' => $suggestions->values(), // reset array keys
+    public function checkCoverage(Request $request)
+    {
+        $request->validate([
+            'lga'       => 'required|string',
+            'country'   => 'nullable|string',
+            'state'     => 'nullable|string',
         ]);
+    
+        $lga     = $request->lga;
+        $state   = $request->state ?? 'Lagos';
+        $country = $request->country ?? 'Nigeria';
+    
+        // Geocode the LGA to get coordinates
+        $geoResponse = Http::get('https://api.geoapify.com/v1/geocode/search', [
+            'text'   => "{$lga}, {$state}, {$country}",
+            'filter' => 'countrycode:ng',
+            'limit'  => 1,
+            'apiKey' => config('services.geoapify.key'),
+        ])->json();
+    
+        $features = $geoResponse['features'] ?? [];
+    
+        if (empty($features)) {
+            return response()->json([
+                'success' => false,
+                'covered' => false,
+                'message' => 'Could not verify your location. Please try again.',
+            ], 422);
+        }
+    
+        $feature = $features[0];
+    
+        [$lon, $lat] = $feature['geometry']['coordinates'];
+    
+        $formattedAddress =
+            $feature['properties']['formatted'] ?? "{$lga}, {$state}, {$country}";
+    
+        $radiusKm = 20;
+    
+        $vendor = DB::table('users')
+            ->where('user_type', 'vendor')
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->selectRaw("
+                id,
+                fullname,
+                latitude,
+                longitude,
+                (
+                    6371 * acos(
+                        cos(radians(?)) * cos(radians(latitude))
+                        * cos(radians(longitude) - radians(?))
+                        + sin(radians(?)) * sin(radians(latitude))
+                    )
+                ) AS distance
+            ", [$lat, $lon, $lat])
+            ->having('distance', '<=', $radiusKm)
+            ->orderBy('distance')
+            ->first();
+    
+        if ($vendor) {
+            return response()->json([
+                'success' => true,
+                'covered' => true,
+    
+                // Geocoded location
+                'searched_location' => [
+                    'lga'       => $lga,
+                    'state'     => $state,
+                    'country'   => $country,
+                    'address'   => $formattedAddress,
+                    'latitude'  => $lat,
+                    'longitude' => $lon,
+                ],
+    
+                // Vendor info
+                'nearest_vendor' => [
+                    'id'         => $vendor->id,
+                    'name'       => $vendor->business_name ?? null,
+                    'latitude'   => $vendor->latitude,
+                    'longitude'  => $vendor->longitude,
+                    'distance_km'=> round($vendor->distance, 1),
+                ],
+    
+                'message' => "Great! We deliver to {$lga}, {$state}.",
+            ]);
+        }
+    
+        return response()->json([
+            'success' => false,
+            'covered' => false,
+    
+            // Still return searched coordinates
+            'searched_location' => [
+                'lga'       => $lga,
+                'state'     => $state,
+                'country'   => $country,
+                'address'   => $formattedAddress,
+                'latitude'  => $lat,
+                'longitude' => $lon,
+            ],
+    
+            'message' => "Sorry, we don't cover {$lga} yet. We're expanding soon!",
+        ], 422);
     }
 }

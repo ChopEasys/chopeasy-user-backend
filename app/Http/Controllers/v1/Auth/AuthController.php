@@ -186,7 +186,7 @@ class AuthController extends Controller
             return JsonResponser::send(true, 'User not found', null, 404);
         }
 
-        $otp = rand(100000, 999999);
+        $otp = rand(1000, 9999);
 
         $user->update([
             'email_otp' => $otp,

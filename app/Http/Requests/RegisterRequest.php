@@ -38,10 +38,11 @@ class RegisterRequest extends FormRequest
             'longitude' => 'nullable|numeric|between:-180,180',
             'vehicle' => ['nullable', 'required_if:user_type,rider', Rule::in(['motorcycle', 'bicycle', 'car'])],
             'bank_name' => 'nullable|string|max:255',
+            'lga' => 'nullable|string|max:255',
             'bank_code' => 'nullable|string|max:50',
             'account_number' => 'nullable|string|max:50',
             'account_name' => 'nullable|string|max:255',
-            'referral_code' => 'nullable|string|exists:users,id', // agent id when customer signs up via agent link
+            'referral_code' => 'nullable|string|exists:users,id', 
         ];
     }
 }

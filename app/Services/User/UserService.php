@@ -65,7 +65,6 @@ class UserService
                 );
             }
 
-            // Get vendor coordinates if not provided in payload
             if (empty($data['latitude']) || empty($data['longitude'])) {
                 if (!empty($data['address'])) {
                     [$lat, $lng] = $this->geoLocationService->getCoordinatesFromAddress($data['address']);
@@ -112,7 +111,6 @@ class UserService
             unset($data['bank_name'], $data['bank_code'], $data['account_number'], $data['account_name']);
         }
 
-        // Referral: customer, vendor, or rider registers with referral_code (agent user id)
         $referralCode = $data['referral_code'] ?? null;
         unset($data['referral_code']);
         if ($referralCode && in_array(($data['user_type'] ?? null), ['customer', 'vendor', 'rider'], true)) {
@@ -122,13 +120,40 @@ class UserService
             }
         }
 
+        // if (in_array($data['user_type'] ?? null, ['customer', 'rider'], true)) {
+        //     $lat = $data['latitude'] ?? null;
+        //     $lon = $data['longitude'] ?? null;
+
+        //     if ($lat && $lon) {
+        //         $radiusKm = 10;
+        //         $nearbyVendor = DB::table('users')
+        //             ->where('user_type', 'vendor')
+        //             ->whereNotNull('latitude')
+        //             ->whereNotNull('longitude')
+        //             ->selectRaw("
+        //         ( 6371 * acos(
+        //             cos(radians(?)) * cos(radians(latitude))
+        //             * cos(radians(longitude) - radians(?))
+        //             + sin(radians(?)) * sin(radians(latitude))
+        //         )) AS distance
+        //     ", [$lat, $lon, $lat])
+        //             ->having('distance', '<=', $radiusKm)
+        //             ->orderByRaw('distance ASC')
+        //             ->first();
+
+        //         if (!$nearbyVendor) {
+        //             throw new \Exception("We don't cover your location yet. No vendors within {$radiusKm}km.");
+        //         }
+        //     }
+        // }
+
         // Create user
         $user = $this->userInterface->create($data);
 
         if ($bankData && $bankRelationName) {
             $filledBankFields = array_filter(
                 $bankData,
-                fn ($value) => !is_null($value) && $value !== ''
+                fn($value) => !is_null($value) && $value !== ''
             );
 
             if (count($filledBankFields) === 4) {

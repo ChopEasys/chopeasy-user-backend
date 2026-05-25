@@ -205,6 +205,7 @@ Route::prefix('v1')->group(function () {
     // routes/api.php
     Route::get('/public/vendor/{vendorId}/products', [VendorProductController::class, 'publicVendorProducts']);
     Route::get('/suggest-address', [PostalCodeController::class, 'suggestAddress']);
+    Route::post('/check-coverage', [PostalCodeController::class, 'checkCoverage']);
 
 
     Route::get('/all/vendor', [VendorProductController::class, 'listVendors']);
