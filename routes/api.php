@@ -94,6 +94,7 @@ Route::prefix('v1')->group(function () {
             Route::post('profile', [VendorProductController::class, 'updateProfile']);
             Route::get('notifications', [NotificationController::class, 'vendorNotifications']);
             Route::get('notifications/all', [NotificationController::class, 'allNotifications']);
+            Route::post('notifications/{id}/read', [NotificationController::class, 'markOneAsRead']);
             Route::post('notifications/read-all', [NotificationController::class, 'markAllAsRead']);
             Route::get('payout-history', [PayoutHistoryController::class, 'vendorHistory']);
         });

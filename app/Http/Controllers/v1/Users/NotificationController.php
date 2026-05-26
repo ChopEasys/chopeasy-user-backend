@@ -124,6 +124,34 @@ class NotificationController extends Controller
         ]);
     }
 
+    public function markOneAsRead(Request $request, string $id)
+    {
+        $user = $request->user();
+
+        if (!$user || $user->user_type !== 'vendor') {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $notification = $user->notifications()->where('id', $id)->first();
+
+        if (!$notification) {
+            return response()->json(['error' => 'Notification not found'], 404);
+        }
+
+        if (!$this->vendorNotificationIsRelevant($notification)) {
+            return response()->json(['error' => 'Notification not found'], 404);
+        }
+
+        if (is_null($notification->read_at)) {
+            $notification->markAsRead();
+        }
+
+        return response()->json([
+            'message' => 'Notification marked as read.',
+            'id' => $notification->id,
+        ]);
+    }
+
     public function markAllAsRead(Request $request)
     {
         $user = $request->user();
