@@ -340,6 +340,7 @@ class CartController extends Controller
             }
         })
             ->where('product_id', $product['id'])
+            ->where('vendor_product_item_id', $vendorProductItem->id)
             ->where(function ($q) use ($productVariantId) {
                 if ($productVariantId) {
                     $q->where('product_variant_id', $productVariantId);
@@ -373,6 +374,7 @@ class CartController extends Controller
             $cartItem->quantity += $request->quantity;
             $cartItem->price_at_addition = $priceToUse;
             $cartItem->total_cost = $cartItem->quantity * $cartItem->price_at_addition;
+            $cartItem->product_variant_id = $productVariantId;
             $cartItem->product_snapshot = $productSnapshot;
             $cartItem->variant_snapshot = $variantSnapshot;
             $cartItem->save();
@@ -381,6 +383,7 @@ class CartController extends Controller
                 'user_id' => $userId,
                 'session_id' => $sessionId,
                 'product_id' => $product['id'],
+                'vendor_product_item_id' => $vendorProductItem->id,
                 'quantity' => $request->quantity,
                 'price_at_addition' => $priceToUse,
                 'total_cost' => $request->quantity * $priceToUse,
@@ -611,6 +614,7 @@ class CartController extends Controller
                 }
             })
                 ->where('product_id', $product['id'])
+                ->where('vendor_product_item_id', $vendorProductItem->id)
                 ->where(function ($q) use ($productVariantId) {
                     if ($productVariantId) {
                         $q->where('product_variant_id', $productVariantId);
@@ -643,6 +647,7 @@ class CartController extends Controller
                 $cartItem->quantity += $item['quantity'];
                 $cartItem->price_at_addition = $cost;
                 $cartItem->total_cost = $cartItem->quantity * $cost;
+                $cartItem->product_variant_id = $productVariantId;
                 $cartItem->product_snapshot = $productSnapshot;
                 $cartItem->variant_snapshot = $variant;
                 $cartItem->save();
@@ -651,6 +656,7 @@ class CartController extends Controller
                     'user_id' => $userId,
                     'session_id' => $sessionId,
                     'product_id' => $product['id'],
+                    'vendor_product_item_id' => $vendorProductItem->id,
                     'product_variant_id' => $productVariantId,
                     'quantity' => $item['quantity'],
                     'price_at_addition' => $cost,

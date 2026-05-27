@@ -10,6 +10,7 @@ class Cart extends Model
         'user_id',
         'session_id',
         'product_id',
+        'vendor_product_item_id',
         'product_variant_id',
         'quantity',
         'price_at_addition',
