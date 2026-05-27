@@ -135,6 +135,35 @@ class PostalCodeController extends Controller
         }
     }
 
+    /**
+     * Hardcoded centroids for all 20 Lagos LGAs.
+     * Using fixed coordinates avoids non-deterministic results from external
+     * geocoding APIs, which was causing the same LGA to pass coverage for some
+     * users and fail for others depending on which coordinate the API returned.
+     */
+    private array $lagosLgaCentroids = [
+        'Agege'            => ['lat' =>  6.6212, 'lon' =>  3.3236],
+        'Ajeromi-Ifelodun' => ['lat' =>  6.4698, 'lon' =>  3.3478],
+        'Alimosho'         => ['lat' =>  6.6145, 'lon' =>  3.2617],
+        'Amuwo-Odofin'     => ['lat' =>  6.4700, 'lon' =>  3.3167],
+        'Apapa'            => ['lat' =>  6.4478, 'lon' =>  3.3640],
+        'Badagry'          => ['lat' =>  6.4142, 'lon' =>  2.8834],
+        'Epe'              => ['lat' =>  6.5867, 'lon' =>  3.9833],
+        'Eti-Osa'          => ['lat' =>  6.4320, 'lon' =>  3.5921],
+        'Ibeju-Lekki'      => ['lat' =>  6.4355, 'lon' =>  3.7836],
+        'Ifako-Ijaiye'     => ['lat' =>  6.6531, 'lon' =>  3.2939],
+        'Ikeja'            => ['lat' =>  6.5954, 'lon' =>  3.3378],
+        'Ikorodu'          => ['lat' =>  6.6194, 'lon' =>  3.5014],
+        'Kosofe'           => ['lat' =>  6.5833, 'lon' =>  3.4167],
+        'Lagos Island'     => ['lat' =>  6.4550, 'lon' =>  3.3940],
+        'Lagos Mainland'   => ['lat' =>  6.5057, 'lon' =>  3.3791],
+        'Mushin'           => ['lat' =>  6.5235, 'lon' =>  3.3515],
+        'Ojo'              => ['lat' =>  6.4685, 'lon' =>  3.1861],
+        'Oshodi-Isolo'     => ['lat' =>  6.5567, 'lon' =>  3.3469],
+        'Shomolu'          => ['lat' =>  6.5404, 'lon' =>  3.3833],
+        'Surulere'         => ['lat' =>  6.4969, 'lon' =>  3.3481],
+    ];
+
     public function checkCoverage(Request $request)
     {
         $request->validate([
@@ -146,33 +175,42 @@ class PostalCodeController extends Controller
         $lga     = $request->lga;
         $state   = $request->state ?? 'Lagos';
         $country = $request->country ?? 'Nigeria';
-    
-        // Geocode the LGA to get coordinates
-        $geoResponse = Http::get('https://api.geoapify.com/v1/geocode/search', [
-            'text'   => "{$lga}, {$state}, {$country}",
-            'filter' => 'countrycode:ng',
-            'limit'  => 1,
-            'apiKey' => config('services.geoapify.key'),
-        ])->json();
-    
-        $features = $geoResponse['features'] ?? [];
-    
-        if (empty($features)) {
+
+        // For now, coverage is ONLY available for Ikorodu.
+        // Any other LGA should explicitly return a "not covered" response.
+        if (strcasecmp($lga, 'Ikorodu') !== 0) {
+            $formattedAddress = "{$lga}, {$state}, {$country}";
+
             return response()->json([
                 'success' => false,
                 'covered' => false,
-                'message' => 'Could not verify your location. Please try again.',
+                'searched_location' => [
+                    'lga'       => $lga,
+                    'state'     => $state,
+                    'country'   => $country,
+                    'address'   => $formattedAddress,
+                ],
+                'message' => "Sorry, we currently only cover Ikorodu. We're expanding to other LGAs soon!",
             ], 422);
         }
-    
-        $feature = $features[0];
-    
-        [$lon, $lat] = $feature['geometry']['coordinates'];
-    
-        $formattedAddress =
-            $feature['properties']['formatted'] ?? "{$lga}, {$state}, {$country}";
-    
-        $radiusKm = 20;
+
+        // Use hardcoded LGA centroid for Ikorodu — avoids non-deterministic geocoding API results
+        $centroid = $this->lagosLgaCentroids['Ikorodu'] ?? null;
+
+        if (!$centroid) {
+            return response()->json([
+                'success' => false,
+                'covered' => false,
+                'message' => 'Unrecognised LGA. Please select a valid Lagos LGA.',
+            ], 422);
+        }
+
+        $lat = $centroid['lat'];
+        $lon = $centroid['lon'];
+        $formattedAddress = "{$lga}, {$state}, {$country}";
+
+        // 50 km radius — large enough to cover vendors anywhere within an LGA
+        $radiusKm = 50;
     
         $vendor = DB::table('users')
             ->where('user_type', 'vendor')
