@@ -213,9 +213,9 @@ class AgentCommissionService
         return [
             'commission_base_amount' => $this->recordedCommissionBaseAmount($earning),
             'commission_base_label' => match ($earning->earning_type) {
-                'customer_order' => 'Company revenue',
-                'vendor_payout' => 'Company vendor profit',
-                'rider_payout' => 'Company delivery profit',
+                'customer_order' => 'Markup + service fee',
+                'vendor_payout' => 'Platform vendor commission',
+                'rider_payout' => 'Platform delivery profit',
                 default => 'Commission base',
             },
         ];
@@ -246,29 +246,56 @@ class AgentCommissionService
 
     protected function customerCompanyRevenueBase(Order $order): float
     {
-        $breakdown = $this->payoutBreakdown($order);
-        $base = (float) ($order->platform_revenue ?? ($breakdown['platform_revenue'] ?? 0));
+        $breakdown = $this->pricingBreakdown($order);
+        $payoutBreakdown = $this->payoutBreakdown($order);
+
+        $markup = (float) ($breakdown['product_markup_total']
+            ?? $payoutBreakdown['product_markup_total']
+            ?? 0);
+        $serviceFee = (float) ($order->service_fee_total
+            ?? $breakdown['service_fee_total']
+            ?? $breakdown['service_charge_total']
+            ?? 0);
+
+        if ($markup <= 0) {
+            $customerSubtotal = (float) ($order->customer_product_subtotal
+                ?? $breakdown['customer_product_subtotal']
+                ?? 0);
+            $vendorSubtotal = (float) ($breakdown['vendor_subtotal'] ?? 0);
+            if ($customerSubtotal > 0 && $vendorSubtotal > 0) {
+                $markup = max($customerSubtotal - $vendorSubtotal, 0);
+            }
+        }
+
+        // Customer-referral agents share only markup + service fee — not delivery margin or vendor take.
+        $base = $markup + $serviceFee;
 
         return round(max($base, 0), 2);
     }
 
-    protected function vendorCompanyProfitBase(Order $order, ?float $vendorTakeAmount = null, ?float $grossAmount = null): float
+    protected function vendorCompanyProfitBase(Order $order, ?float $platformTakeAmount = null, ?float $grossAmount = null): float
     {
+        if ($platformTakeAmount !== null && $platformTakeAmount > 0) {
+            return round($platformTakeAmount, 2);
+        }
+
         $breakdown = $this->pricingBreakdown($order);
         $payoutBreakdown = $this->payoutBreakdown($order);
-        if ($vendorTakeAmount !== null && $vendorTakeAmount > 0) {
-            return round($vendorTakeAmount, 2);
+
+        $vendorTakeTotal = (float) ($payoutBreakdown['vendor_take_total'] ?? 0);
+        if ($vendorTakeTotal > 0) {
+            return round($vendorTakeTotal, 2);
         }
 
         $vendorTakePercent = (float) ($payoutBreakdown['vendor_take_percent']
             ?? $breakdown['vendor_take_percent']
             ?? 0);
         $vendorGrossAmount = $grossAmount !== null && $grossAmount > 0 ? $grossAmount : 0.0;
-        $resolvedTake = $vendorGrossAmount > 0
+        $platformTake = $vendorGrossAmount > 0
             ? round($vendorGrossAmount * ($vendorTakePercent / 100), 2)
             : 0.0;
 
-        return round(max($resolvedTake, 0), 2);
+        return round(max($platformTake, 0), 2);
     }
 
     protected function riderCompanyProfitBase(Order $order, ?float $riderPayoutAmount = null): float

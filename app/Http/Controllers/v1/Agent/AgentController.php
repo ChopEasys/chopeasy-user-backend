@@ -70,17 +70,17 @@ class AgentController extends Controller
                 'customer' => [
                     'link' => $mkLink(config('app.register_base_customer'), 'customer'),
                     'title' => 'Refer customers',
-                    'description' => 'Earn ' . $settings->customer_percent . '% of the company revenue earned on each completed order from customers you referred.',
+                    'description' => 'Earn ' . $settings->customer_percent . '% of markup and service fees on each completed order from customers you referred.',
                 ],
                 'vendor' => [
                     'link' => $mkLink(config('app.register_base_vendor'), 'vendor'),
                     'title' => 'Refer vendors',
-                    'description' => 'Earn ' . $settings->vendor_percent . '% of the company profit on each vendor sale from vendors you referred (up to ' . $settings->max_vendor_rider_payout_commissions . ' payouts per vendor you referred).',
+                    'description' => 'Earn ' . $settings->vendor_percent . '% of the platform commission on each vendor payout from vendors you referred (up to ' . $settings->max_vendor_rider_payout_commissions . ' payouts per vendor).',
                 ],
                 'rider' => [
                     'link' => $mkLink(config('app.register_base_rider'), 'rider'),
                     'title' => 'Refer riders',
-                    'description' => 'Earn ' . $settings->rider_percent . '% of the company delivery profit on each completed delivery by riders you referred (up to ' . $settings->max_vendor_rider_payout_commissions . ' payouts per rider you referred).',
+                    'description' => 'Earn ' . $settings->rider_percent . '% of the platform delivery profit (delivery fee minus rider payout) on each completed delivery by riders you referred (up to ' . $settings->max_vendor_rider_payout_commissions . ' payouts per rider).',
                 ],
             ],
             'referral_code' => $ref,
