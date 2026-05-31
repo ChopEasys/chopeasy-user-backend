@@ -221,6 +221,71 @@ class AgentCommissionService
         ];
     }
 
+    /**
+     * Platform revenue components for admin reporting.
+     */
+    public function platformRevenueSummary(Order $order): array
+    {
+        $breakdown = $this->pricingBreakdown($order);
+        $payoutBreakdown = $this->payoutBreakdown($order);
+
+        $markup = (float) ($breakdown['product_markup_total']
+            ?? $payoutBreakdown['product_markup_total']
+            ?? 0);
+        $serviceFee = (float) ($order->service_fee_total
+            ?? $breakdown['service_fee_total']
+            ?? $breakdown['service_charge_total']
+            ?? 0);
+
+        if ($markup <= 0) {
+            $customerSubtotal = (float) ($order->customer_product_subtotal
+                ?? $breakdown['customer_product_subtotal']
+                ?? 0);
+            $vendorSubtotal = (float) ($breakdown['vendor_subtotal'] ?? 0);
+            if ($customerSubtotal > 0 && $vendorSubtotal > 0) {
+                $markup = max($customerSubtotal - $vendorSubtotal, 0);
+            }
+        }
+
+        $deliveryFeeTotal = (float) ($order->delivery_fee_total
+            ?? $breakdown['delivery_fee_total']
+            ?? $breakdown['total_charge']
+            ?? 0);
+        $riderPayout = (float) ($payoutBreakdown['rider_payout'] ?? $order->rider_payout ?? 0);
+        $deliveryProfit = round(max($deliveryFeeTotal - $riderPayout, 0), 2);
+        $vendorTakeTotal = (float) ($payoutBreakdown['vendor_take_total'] ?? 0);
+        $customerBase = round($markup + $serviceFee, 2);
+        $platformRevenueTotal = (float) ($order->platform_revenue
+            ?? $payoutBreakdown['platform_revenue']
+            ?? ($customerBase + $deliveryProfit + $vendorTakeTotal));
+
+        return [
+            'product_markup' => round($markup, 2),
+            'service_fee' => round($serviceFee, 2),
+            'customer_commission_base' => $customerBase,
+            'delivery_fee_total' => round($deliveryFeeTotal, 2),
+            'rider_payout' => round($riderPayout, 2),
+            'delivery_profit' => $deliveryProfit,
+            'vendor_take_total' => round($vendorTakeTotal, 2),
+            'platform_revenue_total' => round($platformRevenueTotal, 2),
+        ];
+    }
+
+    public function getCustomerCommissionBase(Order $order): float
+    {
+        return $this->customerCompanyRevenueBase($order);
+    }
+
+    public function getVendorCommissionBase(Order $order, ?float $platformTakeAmount = null, ?float $grossAmount = null): float
+    {
+        return $this->vendorCompanyProfitBase($order, $platformTakeAmount, $grossAmount);
+    }
+
+    public function getRiderCommissionBase(Order $order, ?float $riderPayoutAmount = null): float
+    {
+        return $this->riderCompanyProfitBase($order, $riderPayoutAmount);
+    }
+
     protected function canTakeVendorRiderCommission(int $agentId, int $referredUserId, string $kind, int $max): bool
     {
         $row = AgentReferralCommissionCounter::firstOrCreate(

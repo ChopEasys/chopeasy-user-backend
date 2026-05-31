@@ -30,6 +30,7 @@ use App\Http\Controllers\Admin\AdminProductController;
 use App\Http\Controllers\Admin\AdminAgentController;
 use App\Http\Controllers\Admin\AdminAgentWithdrawalController;
 use App\Http\Controllers\Admin\AdminAgentCommissionController;
+use App\Http\Controllers\Admin\AdminAgentCommissionReportController;
 use App\Http\Controllers\Admin\AdminNotificationController;
 use App\Http\Controllers\Admin\SlideController;
 use Illuminate\Support\Facades\Route;
@@ -151,6 +152,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/admin/agent-withdrawals/{id}/reject', [AdminAgentWithdrawalController::class, 'reject']);
         Route::get('/admin/agent-commission-settings', [AdminAgentCommissionController::class, 'show']);
         Route::put('/admin/agent-commission-settings', [AdminAgentCommissionController::class, 'update']);
+        Route::get('/admin/agent-commission-report', [AdminAgentCommissionReportController::class, 'index']);
+        Route::get('/admin/agent-commission-report/orders/{orderId}', [AdminAgentCommissionReportController::class, 'show']);
         Route::get('/admin/notifications', [AdminNotificationController::class, 'index']);
 
         // Admin Pricing Management

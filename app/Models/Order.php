@@ -146,4 +146,19 @@ class Order extends Model
     {
         return $this->belongsTo(WeightTier::class);
     }
+
+    public function agentEarnings()
+    {
+        return $this->hasMany(AgentEarning::class);
+    }
+
+    public function vendorPayouts()
+    {
+        return $this->hasMany(VendorPayout::class);
+    }
+
+    public function riderPayouts()
+    {
+        return $this->hasMany(RiderPayout::class);
+    }
 }
