@@ -99,9 +99,6 @@ Route::prefix('v1')->group(function () {
             Route::get('payout-history', [PayoutHistoryController::class, 'vendorHistory']);
         });
         Route::post('/payment/initialize', [PaymentController::class, 'initialize']);
-        Route::get('/payment/callback', [PaymentController::class, 'callback']);
-        Route::get('/payment/failed', [PaymentController::class, 'failed']);
-        Route::post('/verify-payment', [PaymentController::class, 'verify']);
         Route::get('/transactions', [OrderController::class, 'userTransactions']);
 
         Route::prefix('orders')->group(function () {
@@ -196,7 +193,9 @@ Route::prefix('v1')->group(function () {
 
     // Public routes
 
-    // Paystack Webhook (no authentication required)
+    // Paystack payment routes (no authentication required)
+    Route::get('/payment/callback', [PaymentController::class, 'callback']);
+    Route::post('/verify-payment', [PaymentController::class, 'verify']);
     Route::post('/payment/webhook', [PaymentController::class, 'webhook']);
 
     // Cart routes (available to both guests and authenticated users)

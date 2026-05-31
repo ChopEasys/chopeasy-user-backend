@@ -21,14 +21,15 @@ class PaymentController extends Controller
 
         $amountInKobo = $request->amount * 100;
         $user = $request->user();
+        $frontendUrl = rtrim(config('app.frontend_url'), '/');
 
         $response = Http::withToken(env('PAYSTACK_SECRET_KEY'))
             ->post(env('PAYSTACK_PAYMENT_URL') . '/transaction/initialize', [
                 'email'        => $user->email,
-                'amount'       => $amountInKobo,               
-                'callback_url' => config('app.frontend_url') . "/payment-success",
+                'amount'       => $amountInKobo,
+                'callback_url' => url('/api/v1/payment/callback'),
                 'metadata'     => [
-                    'cancel_action' => config('app.frontend_url') . "/payment-failed",
+                    'cancel_action' => "{$frontendUrl}/payment-failed",
                     'user_id'       => $user->id,
                 ],
             ]);
@@ -36,20 +37,21 @@ class PaymentController extends Controller
         return response()->json($response->json());
     }
 
-
     /**
-     * Step 2: Paystack callback (redirect to frontend success/failed page)
+     * Step 2: Paystack callback — verify, credit wallet, redirect to frontend
      */
     public function callback(Request $request)
     {
         $reference = $request->query('reference') ?? $request->query('trxref');
-
-        $verifyUrl = env('PAYSTACK_PAYMENT_URL') . "/transaction/verify/{$reference}";
-        $response  = Http::withToken(env('PAYSTACK_SECRET_KEY'))->get($verifyUrl)->json();
-
         $frontendUrl = rtrim(config('app.frontend_url'), '/');
 
-        if ($response['status'] && $response['data']['status'] === 'success') {
+        if (!$reference) {
+            return redirect()->away("{$frontendUrl}/payment-failed");
+        }
+
+        $transaction = $this->creditDepositFromReference($reference);
+
+        if ($transaction) {
             return redirect()->away("{$frontendUrl}/payment-success?reference={$reference}");
         }
 
@@ -57,8 +59,7 @@ class PaymentController extends Controller
     }
 
     /**
-     * Step 3: Verify payment (frontend can call this API)
-     * This now checks if the webhook has already processed the payment
+     * Step 3: Verify payment (public — frontend calls after Paystack redirect)
      */
     public function verify(Request $request)
     {
@@ -68,64 +69,37 @@ class PaymentController extends Controller
 
         $reference = $request->reference;
 
-        // First check if transaction was already processed by webhook
         $existingTransaction = Transaction::where('reference', $reference)
             ->where('type', 'deposit')
             ->first();
 
         if ($existingTransaction) {
             $user = User::find($existingTransaction->user_id);
+
             return response()->json([
-                'error'       => "false",
+                'error'       => 'false',
                 'message'     => 'Payment successful, wallet credited',
                 'amount_paid' => $existingTransaction->amount,
                 'main_wallet' => $user ? $user->main_wallet : null,
             ]);
         }
 
-        // Fallback: verify directly with Paystack if webhook hasn't processed it yet
-        $response = Http::withToken(env('PAYSTACK_SECRET_KEY'))
-            ->get(env('PAYSTACK_PAYMENT_URL') . "/transaction/verify/{$reference}")
-            ->json();
+        $transaction = $this->creditDepositFromReference($reference);
 
-        if ($response['status'] && $response['data']['status'] === 'success') {
-            $amount = $response['data']['amount'] / 100;
-            $email  = $response['data']['customer']['email'];
-
-            $user = User::where('email', $email)->first();
-
-            if ($user) {
-                $existing = Transaction::where('reference', $reference)
-                    ->where('user_id', $user->id)
-                    ->where('type', 'deposit')
-                    ->first();
-
-                if (!$existing) {
-                    $user->increment('main_wallet', $amount);
-
-                    Transaction::create([
-                        'user_id' => $user->id,
-                        'order_id' => null,
-                        'type' => 'deposit',
-                        'source_wallet' => 'main_wallet',
-                        'destination_wallet' => 'main_wallet',
-                        'amount' => $amount,
-                        'reference' => $reference,
-                        'status' => 'successful',
-                        'description' => 'Wallet top up via Paystack',
-                    ]);
-                } else {
-                    $user->refresh();
-                }
-            }
+        if ($transaction) {
+            $user = User::find($transaction->user_id);
 
             return response()->json([
-                'error'       => "false",
+                'error'       => 'false',
                 'message'     => 'Payment successful, wallet credited',
-                'amount_paid' => $amount,
+                'amount_paid' => $transaction->amount,
                 'main_wallet' => $user ? $user->main_wallet : null,
             ]);
         }
+
+        $response = Http::withToken(env('PAYSTACK_SECRET_KEY'))
+            ->get(env('PAYSTACK_PAYMENT_URL') . "/transaction/verify/{$reference}")
+            ->json();
 
         return response()->json([
             'message' => 'Payment failed or not yet processed',
@@ -135,72 +109,102 @@ class PaymentController extends Controller
 
     /**
      * Step 4: Paystack Webhook Handler
-     * This endpoint receives webhook events from Paystack
      */
     public function webhook(Request $request)
     {
-        // Verify webhook signature for security
-        $input = $request->all();
         $signature = $request->header('x-paystack-signature');
 
         if (!$signature) {
             return response()->json(['message' => 'No signature provided'], 400);
         }
 
-        // Verify the signature
-        $computedSignature = hash_hmac('sha512', json_encode($input), env('PAYSTACK_SECRET_KEY'));
+        $computedSignature = hash_hmac('sha512', $request->getContent(), env('PAYSTACK_SECRET_KEY'));
 
-        if ($signature !== $computedSignature) {
+        if (!hash_equals($signature, $computedSignature)) {
             return response()->json(['message' => 'Invalid signature'], 401);
         }
 
-        // Handle the event
+        $input = $request->all();
         $event = $input['event'] ?? null;
 
         if ($event === 'charge.success') {
             $data = $input['data'] ?? null;
 
-            if ($data && isset($data['status']) && $data['status'] === 'success') {
-                $reference = $data['reference'];
-                $amount = $data['amount'] / 100; // Convert from kobo to naira
-                $email = $data['customer']['email'] ?? null;
-
-                // Find user by email
-                $user = User::where('email', $email)->first();
-
-                if ($user) {
-                    // Check if transaction already exists to prevent double processing
-                    $existing = Transaction::where('reference', $reference)
-                        ->where('user_id', $user->id)
-                        ->where('type', 'deposit')
-                        ->first();
-
-                    if (!$existing) {
-                        // Credit user wallet
-                        $user->increment('main_wallet', $amount);
-                        // Create transaction record
-                        Transaction::create([
-                            'user_id' => $user->id,
-                            'order_id' => null,
-                            'type' => 'deposit',
-                            'source_wallet' => 'main_wallet',
-                            'destination_wallet' => 'main_wallet',
-                            'amount' => $amount,
-                            'reference' => $reference,
-                            'status' => 'successful',
-                            'description' => 'Wallet top up via Paystack',
-                        ]);
-
-                        // \Log::info("Payment processed via webhook: Reference {$reference}, Amount {$amount}, User {$user->id}");
-                    } else {
-                        // \Log::info("Transaction already processed: Reference {$reference}");
-                    }
-                } else {
-                    // \Log::warning("User not found for email: {$email}");
-                }
+            if ($data && ($data['status'] ?? null) === 'success') {
+                $this->creditDepositFromPaystackData($data);
             }
         }
 
         return response()->json(['message' => 'Webhook received'], 200);
+    }
+
+    /**
+     * Verify with Paystack and credit the user's wallet (idempotent).
+     */
+    private function creditDepositFromReference(string $reference): ?Transaction
+    {
+        $existing = Transaction::where('reference', $reference)
+            ->where('type', 'deposit')
+            ->first();
+
+        if ($existing) {
+            return $existing;
+        }
+
+        $response = Http::withToken(env('PAYSTACK_SECRET_KEY'))
+            ->get(env('PAYSTACK_PAYMENT_URL') . "/transaction/verify/{$reference}")
+            ->json();
+
+        if (!($response['status'] ?? false) || ($response['data']['status'] ?? null) !== 'success') {
+            return null;
+        }
+
+        return $this->creditDepositFromPaystackData($response['data']);
+    }
+
+    /**
+     * Credit wallet from Paystack transaction data. Returns null if user not found.
+     */
+    private function creditDepositFromPaystackData(array $data): ?Transaction
+    {
+        $reference = $data['reference'] ?? null;
+        if (!$reference) {
+            return null;
+        }
+
+        $existing = Transaction::where('reference', $reference)
+            ->where('type', 'deposit')
+            ->first();
+
+        if ($existing) {
+            return $existing;
+        }
+
+        $amount = ($data['amount'] ?? 0) / 100;
+        $email = $data['customer']['email'] ?? null;
+        $userId = $data['metadata']['user_id'] ?? null;
+
+        $user = $userId ? User::find($userId) : null;
+        if (!$user && $email) {
+            $user = User::where('email', $email)->first();
+        }
+
+        if (!$user) {
+            return null;
+        }
+
+        $user->increment('main_wallet', $amount);
+
+        return Transaction::create([
+            'user_id'            => $user->id,
+            'order_id'           => null,
+            'type'               => 'deposit',
+            'source_wallet'      => 'main_wallet',
+            'destination_wallet' => 'main_wallet',
+            'amount'             => $amount,
+            'reference'          => $reference,
+            'status'             => 'successful',
+            'description'        => 'Wallet top up via Paystack',
+        ]);
     }
 }
