@@ -58,6 +58,7 @@ class PaymentController extends Controller
 
     /**
      * Step 3: Verify payment (frontend can call this API)
+     * This now checks if the webhook has already processed the payment
      */
     public function verify(Request $request)
     {
@@ -67,6 +68,22 @@ class PaymentController extends Controller
 
         $reference = $request->reference;
 
+        // First check if transaction was already processed by webhook
+        $existingTransaction = Transaction::where('reference', $reference)
+            ->where('type', 'deposit')
+            ->first();
+
+        if ($existingTransaction) {
+            $user = User::find($existingTransaction->user_id);
+            return response()->json([
+                'error'       => "false",
+                'message'     => 'Payment successful, wallet credited',
+                'amount_paid' => $existingTransaction->amount,
+                'main_wallet' => $user ? $user->main_wallet : null,
+            ]);
+        }
+
+        // Fallback: verify directly with Paystack if webhook hasn't processed it yet
         $response = Http::withToken(env('PAYSTACK_SECRET_KEY'))
             ->get(env('PAYSTACK_PAYMENT_URL') . "/transaction/verify/{$reference}")
             ->json();
@@ -111,8 +128,79 @@ class PaymentController extends Controller
         }
 
         return response()->json([
-            'message' => 'Payment failed',
+            'message' => 'Payment failed or not yet processed',
             'data'    => $response,
         ], 400);
+    }
+
+    /**
+     * Step 4: Paystack Webhook Handler
+     * This endpoint receives webhook events from Paystack
+     */
+    public function webhook(Request $request)
+    {
+        // Verify webhook signature for security
+        $input = $request->all();
+        $signature = $request->header('x-paystack-signature');
+
+        if (!$signature) {
+            return response()->json(['message' => 'No signature provided'], 400);
+        }
+
+        // Verify the signature
+        $computedSignature = hash_hmac('sha512', json_encode($input), env('PAYSTACK_SECRET_KEY'));
+
+        if ($signature !== $computedSignature) {
+            return response()->json(['message' => 'Invalid signature'], 401);
+        }
+
+        // Handle the event
+        $event = $input['event'] ?? null;
+
+        if ($event === 'charge.success') {
+            $data = $input['data'] ?? null;
+
+            if ($data && isset($data['status']) && $data['status'] === 'success') {
+                $reference = $data['reference'];
+                $amount = $data['amount'] / 100; // Convert from kobo to naira
+                $email = $data['customer']['email'] ?? null;
+
+                // Find user by email
+                $user = User::where('email', $email)->first();
+
+                if ($user) {
+                    // Check if transaction already exists to prevent double processing
+                    $existing = Transaction::where('reference', $reference)
+                        ->where('user_id', $user->id)
+                        ->where('type', 'deposit')
+                        ->first();
+
+                    if (!$existing) {
+                        // Credit user wallet
+                        $user->increment('main_wallet', $amount);
+                        // Create transaction record
+                        Transaction::create([
+                            'user_id' => $user->id,
+                            'order_id' => null,
+                            'type' => 'deposit',
+                            'source_wallet' => 'main_wallet',
+                            'destination_wallet' => 'main_wallet',
+                            'amount' => $amount,
+                            'reference' => $reference,
+                            'status' => 'successful',
+                            'description' => 'Wallet top up via Paystack',
+                        ]);
+
+                        // \Log::info("Payment processed via webhook: Reference {$reference}, Amount {$amount}, User {$user->id}");
+                    } else {
+                        // \Log::info("Transaction already processed: Reference {$reference}");
+                    }
+                } else {
+                    // \Log::warning("User not found for email: {$email}");
+                }
+            }
+        }
+
+        return response()->json(['message' => 'Webhook received'], 200);
     }
 }

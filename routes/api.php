@@ -196,6 +196,9 @@ Route::prefix('v1')->group(function () {
 
     // Public routes
 
+    // Paystack Webhook (no authentication required)
+    Route::post('/payment/webhook', [PaymentController::class, 'webhook']);
+
     // Cart routes (available to both guests and authenticated users)
     Route::post('/cart/add', [CartController::class, 'addToCart']);
     Route::get('/cart', [CartController::class, 'viewCart']);
