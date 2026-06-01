@@ -1052,6 +1052,7 @@ class OrderController extends Controller
                 'date' => $order->created_at,
                 'customer' => trim($customer) ?: optional($order->user)->fullname,
                 'vendor' => $vendorLabel,
+                'vendors' => $vendorNames,
                 'items_count' => (int) ($order->item_count ?? 0),
                 'total' => $order->total_amount,
                 'status' => $order->status,
@@ -1096,6 +1097,47 @@ class OrderController extends Controller
 
             $shipping = $order->shipping_address_snapshot ?? [];
             $customerName = trim(($shipping['first_name'] ?? '') . ' ' . ($shipping['last_name'] ?? ''));
+            $vendorOrdersByItem = $order->vendorOrders->keyBy('order_item_id');
+            $mappedItems = $order->items->map(function ($item) use ($vendorOrdersByItem) {
+                $vendorOrder = $vendorOrdersByItem->get($item->id);
+                $vendor = $vendorOrder?->vendor;
+                $vendorName = $vendor ? ($vendor->store_name ?? $vendor->fullname) : null;
+
+                return [
+                    'product_id' => $item->product_id,
+                    'name' => $item->product_snapshot['name'] ?? null,
+                    'image' => $item->product_snapshot['image'] ?? null,
+                    'vendor_id' => $vendorOrder?->vendor_id,
+                    'vendor_name' => $vendorName,
+                    'quantity' => (int) $item->quantity,
+                    'unit_price' => (float) $item->price_at_order,
+                    'total' => (float) ($item->quantity * $item->price_at_order),
+                ];
+            })->values();
+
+            $vendorGroups = $mappedItems
+                ->groupBy(fn($item) => $item['vendor_id'] ?? 'unknown')
+                ->map(function ($items) {
+                    $first = $items->first();
+
+                    return [
+                        'vendor_id' => $first['vendor_id'] ?? null,
+                        'vendor_name' => $first['vendor_name'] ?? 'Unknown Store',
+                        'items_count' => (int) $items->sum('quantity'),
+                        'total' => (float) $items->sum('total'),
+                        'items' => $items->map(function ($item) {
+                            return [
+                                'product_id' => $item['product_id'],
+                                'name' => $item['name'],
+                                'image' => $item['image'],
+                                'quantity' => $item['quantity'],
+                                'unit_price' => $item['unit_price'],
+                                'total' => $item['total'],
+                            ];
+                        })->values(),
+                    ];
+                })
+                ->values();
 
             $response = [
                 'order_number' => $order->order_number,
@@ -1110,16 +1152,8 @@ class OrderController extends Controller
                     ->unique()
                     ->values(),
 
-                'order_items' => $order->items->map(function ($item) {
-                    return [
-                        'product_id' => $item->product_id,
-                        'name' => $item->product_snapshot['name'] ?? null,
-                        'image' => $item->product_snapshot['image'] ?? null,
-                        'quantity' => $item->quantity,
-                        'unit_price' => $item->price_at_order,
-                        'total' => $item->quantity * $item->price_at_order,
-                    ];
-                })->toArray(),
+                'order_items' => $mappedItems->toArray(),
+                'vendor_groups' => $vendorGroups->toArray(),
 
                 'summary' => [
                     'subtotal' => $order->total_amount,

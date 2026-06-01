@@ -59,7 +59,7 @@ class AdminVendorController extends Controller
             ->pluck('total_items', 'vendor_id');
 
         $formatted = $vendors->map(function ($vendor) use ($ordersCount, $revenueByVendor, $itemsByVendor) {
-            $status = !$vendor->is_active ? 'rejected' : ($vendor->is_verified ? 'approved' : 'pending');
+            $status = $vendor->is_active && $vendor->is_verified ? 'approved' : 'pending';
             return [
                 'id' => (string) $vendor->id,
                 'name' => $vendor->store_name ?? $vendor->fullname,
@@ -106,7 +106,7 @@ class AdminVendorController extends Controller
             ->join('order_items', 'vendor_orders.order_item_id', '=', 'order_items.id')
             ->sum(DB::raw('order_items.price_at_order * order_items.quantity'));
 
-        $status = !$vendor->is_active ? 'rejected' : ($vendor->is_verified ? 'approved' : 'pending');
+        $status = $vendor->is_active && $vendor->is_verified ? 'approved' : 'pending';
 
         $orderItems = VendorOrder::with(['orderItem.order'])
             ->where('vendor_id', $id)

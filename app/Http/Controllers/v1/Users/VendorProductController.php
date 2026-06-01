@@ -1241,6 +1241,25 @@ case 'price-low':
     public function showVendorProducts(Request $request, $vendorId)
     {
         try {
+            $vendor = User::where('id', $vendorId)
+                ->where('user_type', 'vendor')
+                ->where('is_active', 1)
+                ->first();
+
+            if (!$vendor) {
+                return response()->json([
+                    'data' => [],
+                    'vendor' => null,
+                    'message' => 'Vendor is not active.',
+                    'pagination' => [
+                        'current_page' => 1,
+                        'per_page' => (int) $request->query('per_page', 50),
+                        'total' => 0,
+                        'last_page' => 1,
+                    ],
+                ], 404);
+            }
+
             $perPage = (int) $request->query('per_page', 50);
             $perPage = $perPage > 0 ? min($perPage, 200) : 50;
 
@@ -1268,7 +1287,7 @@ case 'price-low':
 
             return response()->json([
                 'data' => $products,
-                'vendor' => $vendorProducts->first()->vendor ?? null,
+                'vendor' => $vendorProducts->first()->vendor ?? $vendor,
                 'pagination' => [
                     'total' => $vendorProducts->total(),
                     'per_page' => $vendorProducts->perPage(),
@@ -1311,6 +1330,19 @@ case 'price-low':
     public function publicVendorProducts($vendorId)
     {
         try {
+            $vendor = User::where('id', $vendorId)
+                ->where('user_type', 'vendor')
+                ->where('is_active', 1)
+                ->first();
+
+            if (!$vendor) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Vendor is not active.',
+                    'data' => [],
+                ], 404);
+            }
+
             $products = VendorProductItem::with('vendor')
                 ->where('vendor_id', $vendorId)
                 ->latest()

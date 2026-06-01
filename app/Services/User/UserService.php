@@ -86,6 +86,10 @@ class UserService
             }
         }
 
+        if (in_array(($data['user_type'] ?? null), ['vendor', 'rider'], true)) {
+            $data['is_active'] = false;
+        }
+
         // Customer geolocation - use provided coordinates or geocode from address
         if (($data['user_type'] ?? null) === 'customer') {
             // Get customer coordinates if not provided in payload
@@ -234,6 +238,15 @@ class UserService
             return response()->json([
                 'error' => true,
                 'message' => 'Please verify your email before logging in.',
+                'status' => 403,
+                'data' => null
+            ], 403);
+        }
+
+        if (in_array($user->user_type, ['vendor', 'rider'], true) && !$user->is_active) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Your account is pending admin activation.',
                 'status' => 403,
                 'data' => null
             ], 403);

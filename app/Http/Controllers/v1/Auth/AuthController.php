@@ -314,6 +314,7 @@ class AuthController extends Controller
                         'date' => $order->created_at->format('M d, Y'),
                         'amount' => $order->total_amount,
                         'status' => $order->status,
+                        'items_count' => (int) ($order->item_count ?? $order->items?->sum('quantity') ?? 0),
                     ];
                 }),
                 'address' => $hasAddress ? $address : null,

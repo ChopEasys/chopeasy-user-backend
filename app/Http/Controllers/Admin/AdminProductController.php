@@ -42,6 +42,7 @@ class AdminProductController extends Controller
                 'name' => $item->display_name ?: $item->name,
                 'category' => $item->category_name ?? 'Uncategorized',
                 'price' => (float) $item->price,
+                'cost_price' => (float) ($item->vendor_price ?? $item->price),
                 'stock' => (int) ($item->quantity ?? 0),
                 'vendor_id' => (string) $item->vendor_id,
                 'vendor_name' => $vendor ? ($vendor->store_name ?? $vendor->fullname) : 'N/A',
