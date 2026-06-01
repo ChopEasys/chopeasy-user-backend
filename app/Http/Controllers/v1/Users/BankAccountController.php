@@ -308,17 +308,24 @@ class BankAccountController extends Controller
         }
 
         $existing = $this->bankDetailsRecord($user);
-        $bankDetails = $relation->updateOrCreate(
-            ['user_id' => $user->id],
-            array_merge($resolved, [
-                'recipient_code' => (
-                    $existing &&
-                    $existing->bank_code === $resolved['bank_code'] &&
-                    $existing->account_number === $resolved['account_number'] &&
-                    $existing->account_name === $resolved['account_name']
-                ) ? $existing->recipient_code : null,
-            ])
-        );
+        $bankPayload = array_merge($resolved, [
+            'recipient_code' => (
+                $existing &&
+                $existing->bank_code === $resolved['bank_code'] &&
+                $existing->account_number === $resolved['account_number'] &&
+                $existing->account_name === $resolved['account_name']
+            ) ? $existing->recipient_code : null,
+        ]);
+
+        $bankDetails = $user->user_type === 'agent'
+            ? AgentBankDetail::query()->updateOrCreate(
+                ['user_id' => $user->id],
+                array_merge($bankPayload, ['user_id' => $user->id])
+            )
+            : $relation->updateOrCreate(
+                ['user_id' => $user->id],
+                $bankPayload
+            );
 
         if ($user->user_type === 'agent') {
             AgentBankDetail::where('user_id', $user->id)

@@ -349,9 +349,9 @@ class AgentController extends Controller
 
         $payload = $validator->validated();
 
-        $bankDetails = $user->agentBankDetails()->updateOrCreate(
+        $bankDetails = AgentBankDetail::query()->updateOrCreate(
             ['user_id' => $user->id],
-            $payload
+            array_merge($payload, ['user_id' => $user->id])
         );
 
         AgentBankDetail::where('user_id', $user->id)
