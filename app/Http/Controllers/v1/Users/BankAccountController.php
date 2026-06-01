@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\v1\Users;
 
 use App\Http\Controllers\Controller;
+use App\Models\AgentBankDetail;
 use App\Models\AgentWithdrawal;
 use App\Services\AutomaticPayoutService;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -318,6 +319,15 @@ class BankAccountController extends Controller
                 ) ? $existing->recipient_code : null,
             ])
         );
+
+        if ($user->user_type === 'agent') {
+            AgentBankDetail::where('user_id', $user->id)
+                ->where('id', '!=', $bankDetails->id)
+                ->delete();
+        }
+
+        $bankDetails->refresh();
+        $user->unsetRelation('agentBankDetails');
 
         $this->migrateLegacyBankDetails($user->fresh());
 

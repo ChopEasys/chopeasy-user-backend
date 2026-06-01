@@ -69,4 +69,9 @@ return [
         'rider_assignment_radius_km' => env('RIDER_ASSIGNMENT_RADIUS_KM', 12),
     ],
 
+    'paystack' => [
+        'secret_key' => env('PAYSTACK_SECRET_KEY'),
+        'payment_url' => env('PAYSTACK_PAYMENT_URL', 'https://api.paystack.co'),
+    ],
+
 ];

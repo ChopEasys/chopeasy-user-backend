@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\v1\Agent;
 
 use App\Http\Controllers\Controller;
+use App\Models\AgentBankDetail;
 use App\Models\AgentCommissionSetting;
 use App\Models\AgentCustomerNotificationPref;
 use App\Models\AgentEarning;
@@ -11,10 +12,10 @@ use App\Models\AgentWithdrawalLine;
 use App\Models\User;
 use App\Responser\JsonResponser;
 use App\Services\AgentCommissionService;
+use App\Support\PaystackClient;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 
@@ -45,7 +46,8 @@ class AgentController extends Controller
             ->take(10)
             ->get();
 
-        $bankDetails = $user->agentBankDetails;
+        $user->unsetRelation('agentBankDetails');
+        $bankDetails = $user->agentBankDetails()->first();
 
         $mkLink = static function (string $base, string $type) use ($ref): string {
             return rtrim($base, '/') . '/register?ref=' . $ref . '&type=' . $type;
@@ -345,13 +347,27 @@ class AgentController extends Controller
             ], 422);
         }
 
-        $user->agentBankDetails()->updateOrCreate(
+        $payload = $validator->validated();
+
+        $bankDetails = $user->agentBankDetails()->updateOrCreate(
             ['user_id' => $user->id],
-            $validator->validated()
+            $payload
         );
 
+        AgentBankDetail::where('user_id', $user->id)
+            ->where('id', '!=', $bankDetails->id)
+            ->delete();
+
+        $bankDetails->refresh();
+        $user->unsetRelation('agentBankDetails');
+
         return JsonResponser::send(false, 'Bank details updated.', [
-            'bank_details' => $user->agentBankDetails()->first(),
+            'bank_details' => [
+                'bank_name' => $bankDetails->bank_name,
+                'bank_code' => $bankDetails->bank_code,
+                'account_number' => $bankDetails->account_number,
+                'account_name' => $bankDetails->account_name,
+            ],
         ], 200);
     }
 
@@ -363,15 +379,13 @@ class AgentController extends Controller
             return JsonResponser::send(true, 'Access denied. Agent only.', null, 403);
         }
 
-        if (!env('PAYSTACK_SECRET_KEY')) {
-            return JsonResponser::send(true, 'Paystack secret key not configured.', null, 500);
+        if (!PaystackClient::configured()) {
+            return JsonResponser::send(true, 'Paystack secret key not configured on server.', null, 500);
         }
 
-        $baseUrl = rtrim(env('PAYSTACK_PAYMENT_URL', 'https://api.paystack.co'), '/');
-        $response = Http::withToken(env('PAYSTACK_SECRET_KEY'))
-            ->get($baseUrl . '/bank', [
-                'country' => 'nigeria',
-            ]);
+        $response = PaystackClient::get('bank', [
+            'country' => 'nigeria',
+        ]);
 
         if (!$response->ok() || !($response->json('status') === true)) {
             $message = $response->json('message') ?? 'Unable to load banks.';
@@ -413,20 +427,18 @@ class AgentController extends Controller
             ], 422);
         }
 
-        if (!env('PAYSTACK_SECRET_KEY')) {
-            return JsonResponser::send(true, 'Paystack secret key not configured.', null, 500);
+        if (!PaystackClient::configured()) {
+            return JsonResponser::send(true, 'Paystack secret key not configured on server.', null, 500);
         }
 
         $payload = $validator->validated();
         $bankCode = trim($payload['bank_code']);
         $accountNumber = trim($payload['account_number']);
 
-        $baseUrl = rtrim(env('PAYSTACK_PAYMENT_URL', 'https://api.paystack.co'), '/');
-        $response = Http::withToken(env('PAYSTACK_SECRET_KEY'))
-            ->get($baseUrl . '/bank/resolve', [
-                'account_number' => $accountNumber,
-                'bank_code' => $bankCode,
-            ]);
+        $response = PaystackClient::get('bank/resolve', [
+            'account_number' => $accountNumber,
+            'bank_code' => $bankCode,
+        ]);
 
         if (!$response->ok() || !($response->json('status') === true)) {
             $message = $response->json('message') ?? 'Unable to resolve account name.';

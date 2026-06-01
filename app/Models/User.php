@@ -105,7 +105,7 @@ public function reviews()
 
 public function agentBankDetails()
 {
-    return $this->hasOne(AgentBankDetail::class);
+    return $this->hasOne(AgentBankDetail::class)->latestOfMany();
 }
 
 public function vendorBankDetails()
