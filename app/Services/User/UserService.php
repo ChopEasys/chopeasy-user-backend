@@ -52,10 +52,15 @@ class UserService
         // Vendor-specific processing
         if (($data['user_type'] ?? null) === 'vendor') {
             if (!empty($data['store_image'])) {
-                $data['store_image'] = ImageKitHelper::uploadFile(
-                    $data['store_image'],
-                    'vendor_store_' . time()
-                );
+                $data['store_image'] = str_starts_with($data['store_image'], 'data:')
+                    ? ImageKitHelper::uploadBase64Image(
+                        $data['store_image'],
+                        'vendor_store_' . time()
+                    )
+                    : ImageKitHelper::uploadFile(
+                        $data['store_image'],
+                        'vendor_store_' . time()
+                    );
             }
 
             if (!empty($data['cac_certificate'])) {
@@ -244,11 +249,18 @@ class UserService
         }
 
         if (in_array($user->user_type, ['vendor', 'rider'], true) && !$user->is_active) {
+
+            $message = $user->user_type === 'vendor'
+                ? "Welcome to ChopEasy! 🎉 Your vendor application is being reviewed. A ChopEasy representative will visit your store for verification. We'll notify you as soon as your account is approved and ready to go. Status: Pending Store Verification."
+                : "Welcome to ChopEasy! 🎉 Your rider application is being reviewed. Our team is currently verifying your information. We'll notify you as soon as your account is approved and ready to start delivering. Status: Pending Verification.";
+        
             return response()->json([
                 'error' => true,
-                'message' => 'Your account is pending admin activation.',
+                'pending_verification' => true,
+                'user_type' => $user->user_type,
+                'message' => $message,
                 'status' => 403,
-                'data' => null
+                'data' => null,
             ], 403);
         }
 

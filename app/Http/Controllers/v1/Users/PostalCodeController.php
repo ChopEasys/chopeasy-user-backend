@@ -170,6 +170,7 @@ class PostalCodeController extends Controller
             'lga'       => 'required|string',
             'country'   => 'nullable|string',
             'state'     => 'nullable|string',
+            'user_type' => 'required|in:customer,vendor,rider',
         ]);
     
         $lga     = $request->lga;
@@ -181,6 +182,21 @@ class PostalCodeController extends Controller
         if (strcasecmp($lga, 'Ikorodu') !== 0) {
             $formattedAddress = "{$lga}, {$state}, {$country}";
 
+            $userType = $request->user_type;
+
+            $message = match ($userType) {
+                'vendor' => "Congratulations! We are currently onboarding vendors in {$lga}.",
+                'rider'  => "Congratulations! We are currently onboarding riders in {$lga}.",
+                default  => "Sorry, we currently only cover Ikorodu. We're expanding to other LGAs soon!",
+            };
+            if (in_array($userType, ['vendor', 'rider'])) {
+                return response()->json([
+                    'success' => true,
+                    'covered' => true,
+                    'message' => $message,
+                ]);
+            }
+            
             return response()->json([
                 'success' => false,
                 'covered' => false,
@@ -190,7 +206,7 @@ class PostalCodeController extends Controller
                     'country'   => $country,
                     'address'   => $formattedAddress,
                 ],
-                'message' => "Sorry, we currently only cover Ikorodu. We're expanding to other LGAs soon!",
+                'message' => $message,
             ], 422);
         }
 
