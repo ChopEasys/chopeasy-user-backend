@@ -51,30 +51,30 @@ class UserService
 
         // Vendor-specific processing
         if (($data['user_type'] ?? null) === 'vendor') {
+
             if (!empty($data['store_image'])) {
-                $data['store_image'] = str_starts_with($data['store_image'], 'data:')
-                    ? ImageKitHelper::uploadBase64Image(
-                        $data['store_image'],
-                        'vendor_store_' . time()
-                    )
-                    : ImageKitHelper::uploadFile(
-                        $data['store_image'],
-                        'vendor_store_' . time()
-                    );
-            }
-
-            if (!empty($data['cac_certificate'])) {
-                $data['cac_certificate'] = ImageKitHelper::uploadFile(
-                    $data['cac_certificate'],
-                    'vendor_cac_' . time()
+                $data['store_image'] = ImageKitHelper::uploadBase64Image(
+                    $data['store_image'],
+                    'vendor/store'
                 );
+            } else {
+                unset($data['store_image']);
             }
-
+        
+            if (!empty($data['cac_certificate'])) {
+                $data['cac_certificate'] = ImageKitHelper::uploadBase64Image(
+                    $data['cac_certificate'],
+                    'vendor/cac'
+                );
+            } else {
+                unset($data['cac_certificate']);
+            }
+        
             if (empty($data['latitude']) || empty($data['longitude'])) {
                 if (!empty($data['address'])) {
                     [$lat, $lng] = $this->geoLocationService->getCoordinatesFromAddress($data['address']);
-                    $data['latitude'] = $lat ?? $data['latitude'] ?? null;
-                    $data['longitude'] = $lng ?? $data['longitude'] ?? null;
+                    $data['latitude'] = $lat ?? null;
+                    $data['longitude'] = $lng ?? null;
                 }
             }
         }
@@ -251,9 +251,9 @@ class UserService
         if (in_array($user->user_type, ['vendor', 'rider'], true) && !$user->is_active) {
 
             $message = $user->user_type === 'vendor'
-                ? "Welcome to ChopEasy! 🎉 Your vendor application is being reviewed. A ChopEasy representative will visit your store for verification. We'll notify you as soon as your account is approved and ready to go. Status: Pending Store Verification."
-                : "Welcome to ChopEasy! 🎉 Your rider application is being reviewed. Our team is currently verifying your information. We'll notify you as soon as your account is approved and ready to start delivering. Status: Pending Verification.";
-        
+                ? "Welcome to ChopEasy! 🎉 Your vendor application is being reviewed. A ChopEasy representative will visit your store for verification. We'll notify you as soon as your account is approved and ready to go."
+                : "Welcome to ChopEasy! 🎉 Your rider application is being reviewed. Our team is currently verifying your information. We'll notify you as soon as your account is approved and ready to start delivering.";
+
             return response()->json([
                 'error' => true,
                 'pending_verification' => true,

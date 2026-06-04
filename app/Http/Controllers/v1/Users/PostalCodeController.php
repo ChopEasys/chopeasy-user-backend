@@ -176,43 +176,60 @@ class PostalCodeController extends Controller
         $lga     = $request->lga;
         $state   = $request->state ?? 'Lagos';
         $country = $request->country ?? 'Nigeria';
-
-        // For now, coverage is ONLY available for Ikorodu.
-        // Any other LGA should explicitly return a "not covered" response.
+        $userType = $request->user_type;
+    
+        $formattedAddress = "{$lga}, {$state}, {$country}";
+    
+        /*
+        |--------------------------------------------------------------------------
+        | NOT IKORODU CASE
+        |--------------------------------------------------------------------------
+        */
         if (strcasecmp($lga, 'Ikorodu') !== 0) {
-            $formattedAddress = "{$lga}, {$state}, {$country}";
-
-            $userType = $request->user_type;
-
+    
             $message = match ($userType) {
-                'vendor' => "Congratulations! We are currently onboarding vendors in {$lga}.",
-                'rider'  => "Congratulations! We are currently onboarding riders in {$lga}.",
+                'vendor' => "Congratulations! We are onboarding vendors in {$lga}.",
+                'rider'  => "Congratulations! We are onboarding riders in {$lga}.",
                 default  => "Sorry, we currently only cover Ikorodu. We're expanding to other LGAs soon!",
             };
-            if (in_array($userType, ['vendor', 'rider'])) {
+    
+            // Vendor & rider still allowed to proceed (onboarding flow)
+            if (in_array($userType, ['vendor', 'rider'], true)) {
                 return response()->json([
                     'success' => true,
-                    'covered' => true,
+                    'covered' => false,
                     'message' => $message,
-                ]);
+                    'searched_location' => [
+                        'lga'     => $lga,
+                        'state'   => $state,
+                        'country' => $country,
+                        'address' => $formattedAddress,
+                    ],
+                ], 200);
             }
-            
+    
+            // Customer blocked
             return response()->json([
                 'success' => false,
                 'covered' => false,
-                'searched_location' => [
-                    'lga'       => $lga,
-                    'state'     => $state,
-                    'country'   => $country,
-                    'address'   => $formattedAddress,
-                ],
                 'message' => $message,
+                'searched_location' => [
+                    'lga'     => $lga,
+                    'state'   => $state,
+                    'country' => $country,
+                    'address' => $formattedAddress,
+                ],
             ], 422);
         }
-
-        // Use hardcoded LGA centroid for Ikorodu — avoids non-deterministic geocoding API results
+    
+        /*
+        |--------------------------------------------------------------------------
+        | IKORODU COVERED AREA
+        |--------------------------------------------------------------------------
+        */
+    
         $centroid = $this->lagosLgaCentroids['Ikorodu'] ?? null;
-
+    
         if (!$centroid) {
             return response()->json([
                 'success' => false,
@@ -220,12 +237,10 @@ class PostalCodeController extends Controller
                 'message' => 'Unrecognised LGA. Please select a valid Lagos LGA.',
             ], 422);
         }
-
+    
         $lat = $centroid['lat'];
         $lon = $centroid['lon'];
-        $formattedAddress = "{$lga}, {$state}, {$country}";
-
-        // 50 km radius — large enough to cover vendors anywhere within an LGA
+    
         $radiusKm = 50;
     
         $vendor = DB::table('users')
@@ -249,12 +264,25 @@ class PostalCodeController extends Controller
             ->orderBy('distance')
             ->first();
     
+        /*
+        |--------------------------------------------------------------------------
+        | COVERED (IKORODU HAS VENDOR)
+        |--------------------------------------------------------------------------
+        */
+    
         if ($vendor) {
+    
+            $message = match ($userType) {
+                'vendor' => "Vendor onboarding is active in {$lga}.",
+                'rider'  => "Rider onboarding is active in {$lga}.",
+                default  => "Great! We deliver to {$lga}, {$state}.",
+            };
+    
             return response()->json([
                 'success' => true,
                 'covered' => true,
+                'message' => $message,
     
-                // Geocoded location
                 'searched_location' => [
                     'lga'       => $lga,
                     'state'     => $state,
@@ -264,24 +292,33 @@ class PostalCodeController extends Controller
                     'longitude' => $lon,
                 ],
     
-                // Vendor info
                 'nearest_vendor' => [
-                    'id'         => $vendor->id,
-                    'name'       => $vendor->business_name ?? null,
-                    'latitude'   => $vendor->latitude,
-                    'longitude'  => $vendor->longitude,
-                    'distance_km'=> round($vendor->distance, 1),
+                    'id'          => $vendor->id,
+                    'name'        => $vendor->business_name ?? null,
+                    'latitude'    => $vendor->latitude,
+                    'longitude'   => $vendor->longitude,
+                    'distance_km' => round($vendor->distance, 1),
                 ],
-    
-                'message' => "Great! We deliver to {$lga}, {$state}.",
             ]);
         }
+    
+        /*
+        |--------------------------------------------------------------------------
+        | IKORODU BUT NO VENDOR FOUND
+        |--------------------------------------------------------------------------
+        */
+    
+        $message = match ($userType) {
+            'vendor' => "Vendor onboarding is active in {$lga}.",
+            'rider'  => "Rider onboarding is active in {$lga}.",
+            default  => "Sorry, we don't cover {$lga} yet. We're expanding soon!",
+        };
     
         return response()->json([
             'success' => false,
             'covered' => false,
+            'message' => $message,
     
-            // Still return searched coordinates
             'searched_location' => [
                 'lga'       => $lga,
                 'state'     => $state,
@@ -290,8 +327,6 @@ class PostalCodeController extends Controller
                 'latitude'  => $lat,
                 'longitude' => $lon,
             ],
-    
-            'message' => "Sorry, we don't cover {$lga} yet. We're expanding soon!",
         ], 422);
     }
 }
