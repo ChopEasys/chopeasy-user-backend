@@ -187,18 +187,18 @@ class PostalCodeController extends Controller
         */
         if (strcasecmp($lga, 'Ikorodu') !== 0) {
     
-            $message = match ($userType) {
-                'vendor' => "Congratulations! We are onboarding vendors in {$lga}.",
-                'rider'  => "Congratulations! We are onboarding riders in {$lga}.",
-                default  => "Sorry, we currently only cover Ikorodu. We're expanding to other LGAs soon!",
-            };
+            // $message = match ($userType) {
+                // 'vendor' => "Congratulations! We are onboarding vendors in {$lga}.",
+                // 'rider'  => "Congratulations! We are onboarding riders in {$lga}.",
+                // default  => "Sorry, we currently only cover Ikorodu. We're expanding to other LGAs soon!",
+            // };
     
             // Vendor & rider still allowed to proceed (onboarding flow)
             if (in_array($userType, ['vendor', 'rider'], true)) {
                 return response()->json([
                     'success' => true,
                     'covered' => false,
-                    'message' => $message,
+                    // 'message' => $message,
                     'searched_location' => [
                         'lga'     => $lga,
                         'state'   => $state,
@@ -212,7 +212,7 @@ class PostalCodeController extends Controller
             return response()->json([
                 'success' => false,
                 'covered' => false,
-                'message' => $message,
+                // 'message' => $message,
                 'searched_location' => [
                     'lga'     => $lga,
                     'state'   => $state,
@@ -273,8 +273,9 @@ class PostalCodeController extends Controller
         if ($vendor) {
     
             $message = match ($userType) {
-                'vendor' => "Vendor onboarding is active in {$lga}.",
-                'rider'  => "Rider onboarding is active in {$lga}.",
+                'vendor' => "Congratulations! We are onboarding vendors in {$lga}.",
+                'rider'  => "Congratulations! We are onboarding riders in {$lga}.",
+              
                 default  => "Great! We deliver to {$lga}, {$state}.",
             };
     
@@ -309,8 +310,9 @@ class PostalCodeController extends Controller
         */
     
         $message = match ($userType) {
-            'vendor' => "Vendor onboarding is active in {$lga}.",
-            'rider'  => "Rider onboarding is active in {$lga}.",
+            'vendor' => "Congratulations! We are onboarding vendors in {$lga}.",
+            'rider'  => "Congratulations! We are onboarding riders in {$lga}.",
+           
             default  => "Sorry, we don't cover {$lga} yet. We're expanding soon!",
         };
     
