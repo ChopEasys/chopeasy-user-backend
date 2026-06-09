@@ -47,6 +47,8 @@ class User extends Authenticatable implements JWTSubject
         'food_wallet',
         'store_name',
         'store_image',
+        'opening_time',
+        'closing_time',
         'cac_certificate',
         'longitude',
         'latitude',
@@ -151,6 +153,20 @@ public function vendorPayouts()
 public function riderPayouts()
 {
     return $this->hasMany(RiderPayout::class, 'rider_id');
+}
+
+public function isStoreOpen()
+{
+    if (!$this->opening_time || !$this->closing_time) {
+        return true; // If no hours set, assume always open
+    }
+
+    $now = now();
+    $currentTime = $now->format('H:i:s');
+    $openingTime = $this->opening_time;
+    $closingTime = $this->closing_time;
+
+    return $currentTime >= $openingTime && $currentTime <= $closingTime;
 }
 
 

@@ -374,6 +374,14 @@ class AuthController extends Controller
                     );
                 }
 
+                if ($request->filled('openingTime')) {
+                    $user->opening_time = $request->openingTime;
+                }
+
+                if ($request->filled('closingTime')) {
+                    $user->closing_time = $request->closingTime;
+                }
+
                 $user->save();
                 break;
 
