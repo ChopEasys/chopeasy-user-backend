@@ -17,68 +17,94 @@ class ProcessRecurringOrders extends Command
 
     public function handle()
     {
-        $orders = Order::with('items')
+        $orders = Order::with(['user', 'items'])
+            ->whereHas('user')
             ->whereIn('payment_type', ['daily', 'weekly', 'monthly'])
             ->where('remaining_amount', '>', 0)
             ->where('next_due_date', '<=', now())
             ->get();
-
+    
         foreach ($orders as $order) {
             $user = $order->user;
-
+    
+            if (!$user) {
+                $this->error("Skipping order #{$order->id}: no user assigned.");
+                continue;
+            }
+    
             $total = (float) $order->total_amount;
             $remaining = (float) $order->remaining_amount;
             $customAmount = (float) ($order->custom_amount ?? 0);
-
+    
             $deduction = 0;
+    
             if ($order->payment_type === 'daily') {
-                $baseAmount = $customAmount > 0 ? $customAmount : round($total / 30, 2);
+                $baseAmount = $customAmount > 0
+                    ? $customAmount
+                    : round($total / 30, 2);
+    
                 $deduction = min($baseAmount, $remaining);
                 $order->next_due_date = now()->addDay();
             } elseif ($order->payment_type === 'weekly') {
                 $n = max(1, (int) ($order->installment_count ?: 4));
-                $baseAmount = $customAmount > 0 ? $customAmount : round($total / $n, 2);
+    
+                $baseAmount = $customAmount > 0
+                    ? $customAmount
+                    : round($total / $n, 2);
+    
                 $deduction = min($baseAmount, $remaining);
                 $order->next_due_date = now()->addWeek();
             } elseif ($order->payment_type === 'monthly') {
                 $n = max(1, (int) ($order->installment_count ?: 2));
-                $baseAmount = $customAmount > 0 ? $customAmount : round($total / $n, 2);
+    
+                $baseAmount = $customAmount > 0
+                    ? $customAmount
+                    : round($total / $n, 2);
+    
                 $deduction = min($baseAmount, $remaining);
                 $order->next_due_date = now()->addMonth();
             }
-
+    
             if ($user->main_wallet >= $deduction) {
+    
                 DB::beginTransaction();
+    
                 $becameFullyPaid = false;
+    
                 try {
+    
                     $user->main_wallet -= $deduction;
-
+    
                     $order->amount_paid += $deduction;
                     $order->remaining_amount -= $deduction;
-
+    
                     if ($order->remaining_amount <= 0) {
+    
                         $becameFullyPaid = true;
                         $order->payment_status = 'paid';
                         $order->status = 'ongoing';
                         $order->next_due_date = null;
-
-                        // ✅ Generate vendor_order_code if not already set
+    
                         if (!$order->vendor_order_code) {
+    
                             $code = 'VC-' . strtoupper(Str::random(8));
+    
                             $order->vendor_order_code = $code;
-
-                            // ✅ Sync into vendor_orders table for each item
+    
                             foreach ($order->items as $item) {
+    
                                 DB::table('vendor_orders')
                                     ->where('order_item_id', $item->id)
-                                    ->update(['vendor_order_code' => $code]);
+                                    ->update([
+                                        'vendor_order_code' => $code
+                                    ]);
                             }
                         }
                     }
-
+    
                     $user->save();
                     $order->save();
-
+    
                     Transaction::create([
                         'user_id' => $user->id,
                         'order_id' => $order->id,
@@ -90,22 +116,41 @@ class ProcessRecurringOrders extends Command
                         'status' => 'successful',
                         'description' => ucfirst($order->payment_type) . " installment for Order #{$order->id}",
                     ]);
-
+    
                     DB::commit();
+    
                     $this->info("Processed order #{$order->id} for user {$user->id}");
-
+    
                     if ($becameFullyPaid) {
+    
                         try {
-                            app(VendorOrderPayoutNotifier::class)->notifyIfEligible($order->fresh()->load('items'));
+    
+                            app(VendorOrderPayoutNotifier::class)
+                                ->notifyIfEligible(
+                                    $order->fresh()->load('items')
+                                );
+    
                         } catch (\Throwable $e) {
-                            $this->warn("Vendor payout notification failed for order #{$order->id}: " . $e->getMessage());
+    
+                            $this->warn(
+                                "Vendor payout notification failed for order #{$order->id}: "
+                                . $e->getMessage()
+                            );
                         }
                     }
+    
                 } catch (\Throwable $e) {
+    
                     DB::rollBack();
-                    $this->error("Error processing order #{$order->id}: " . $e->getMessage());
+    
+                    $this->error(
+                        "Error processing order #{$order->id}: "
+                        . $e->getMessage()
+                    );
                 }
+    
             } else {
+    
                 Transaction::create([
                     'user_id' => $user->id,
                     'order_id' => $order->id,
@@ -117,16 +162,30 @@ class ProcessRecurringOrders extends Command
                     'status' => 'failed',
                     'description' => "Failed {$order->payment_type} deduction due to insufficient funds",
                 ]);
-
+    
                 if ($deduction > 0) {
+    
                     try {
-                        $user->notify(new InsufficientWalletBalanceNotification($order, $deduction));
+    
+                        $user->notify(
+                            new InsufficientWalletBalanceNotification(
+                                $order,
+                                $deduction
+                            )
+                        );
+    
                     } catch (\Throwable $e) {
-                        $this->warn("Failed to send insufficient funds email for user {$user->id}, order #{$order->id}: " . $e->getMessage());
+    
+                        $this->warn(
+                            "Failed to send insufficient funds email for user {$user->id}, order #{$order->id}: "
+                            . $e->getMessage()
+                        );
                     }
                 }
-
-                $this->warn("Insufficient funds for user {$user->id}, order #{$order->id}");
+    
+                $this->warn(
+                    "Insufficient funds for user {$user->id}, order #{$order->id}"
+                );
             }
         }
     }
