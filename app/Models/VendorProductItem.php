@@ -20,6 +20,7 @@ class VendorProductItem extends Model
         'uom',
         'weight',
         'quantity',
+        'manual_out_of_stock',
         'price',
         'vendor_price',
         'category_name',
@@ -30,6 +31,7 @@ class VendorProductItem extends Model
         'product_variant_id' => 'integer',
         'weight' => 'decimal:2',
         'quantity' => 'integer',
+        'manual_out_of_stock' => 'boolean',
         'price' => 'decimal:2',
         'vendor_price' => 'decimal:2',
     ];
