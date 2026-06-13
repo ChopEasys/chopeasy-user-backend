@@ -365,9 +365,7 @@ class AuthController extends Controller
             if ($request->filled('business_type')) {
                 $user->business_type = $request->business_type;
             }
-            if ($request->filled('business_registered')) {
-                $user->business_registered = $request->business_registered;
-            }
+           
             if ($request->filled('business_owner')) {
                 $user->business_owner = $request->business_owner;
             }
