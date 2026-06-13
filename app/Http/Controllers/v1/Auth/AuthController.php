@@ -369,9 +369,7 @@ class AuthController extends Controller
             if ($request->filled('business_owner')) {
                 $user->business_owner = $request->business_owner;
             }
-            if ($request->has('is_not_owner')) {
-                $user->is_not_owner = $request->is_not_owner;
-            }
+         
             if ($request->filled('latitude')) {
                 $user->latitude = $request->latitude;
             }
