@@ -391,13 +391,13 @@ class AuthController extends Controller
                 $user->closing_time = $request->closingTime;
             }
             if ($request->filled('storePhoto')) {
-                $user->store_image = ImageKitHelper::uploadFile(
+                $user->store_image = ImageKitHelper::uploadBase64Image(
                     $request->storePhoto,
                     'vendor_store_' . $user->id . '_' . time()
                 );
             }
             if ($request->filled('userImage')) {
-                $user->image = ImageKitHelper::uploadFile(
+                $user->image = ImageKitHelper::uploadBase64Image(
                     $request->userImage,
                     'vendor_profile_' . $user->id . '_' . time()
                 );
