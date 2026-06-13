@@ -327,94 +327,135 @@ class AuthController extends Controller
         }
     }
 
-    public function updateProfile(Request $request)
-    {
-        $user = Auth::user();
+   public function updateProfile(Request $request)
+{
+    $user = Auth::user();
 
-        if (!$user) {
-            return response()->json(['error' => 'User not found'], 404);
-        }
-
-        // ✅ Password update requires old password validation
-        if ($request->filled('oldPassword') && $request->filled('newPassword')) {
-            if (!Hash::check($request->oldPassword, $user->password)) {
-                return response()->json(['error' => 'Old password is incorrect'], 422);
-            }
-
-            $user->password = Hash::make($request->newPassword);
-        }
-
-        // ✅ Update common fields
-        if ($request->filled('fullname')) {
-            $user->fullname = $request->fullname;
-        }
-
-        if ($request->filled('phone')) {
-            $user->phoneno = $request->phone;
-        }
-
-        if ($request->filled('email')) {
-            $user->email = $request->email;
-        }
-
-        switch ($user->user_type) {
-            case 'vendor':
-                if ($request->filled('cacNumber')) {
-                    $user->cac_certificate = $request->cacNumber;
-                }
-
-                if ($request->filled('storeAddress')) {
-                    $user->address = $request->storeAddress;
-                }
-
-                if ($request->filled('storePhoto')) {
-                    $user->store_image = ImageKitHelper::uploadFile(
-                        $request->storePhoto,
-                        'vendor_store_' . $user->id . '_' . time()
-                    );
-                }
-
-                if ($request->filled('openingTime')) {
-                    $user->opening_time = $request->openingTime;
-                }
-
-                if ($request->filled('closingTime')) {
-                    $user->closing_time = $request->closingTime;
-                }
-
-                $user->save();
-                break;
-
-            case 'customer':
-                if ($request->filled('userImage')) {
-                    $user->image = ImageKitHelper::uploadFile(
-                        $request->userImage,
-                        'customer_profile_' . $user->id . '_' . time()
-                    );
-                }
-                $user->save();
-                break;
-
-            case 'rider':
-                if ($request->filled('licenseNumber')) {
-                    $user->license_number = $request->licenseNumber;
-                }
-
-                if ($request->filled('idDocument')) {
-                    $user->id_document = ImageKitHelper::uploadFile(
-                        $request->idDocument,
-                        'rider_id_' . $user->id . '_' . time()
-                    );
-                }
-                $user->save();
-                break;
-        }
-
-        return response()->json([
-            'message' => 'Profile updated successfully',
-            'user'    => $user
-        ]);
+    if (!$user) {
+        return response()->json(['error' => 'User not found'], 404);
     }
+
+    // Password update
+    if ($request->filled('oldPassword') && $request->filled('newPassword')) {
+        if (!Hash::check($request->oldPassword, $user->password)) {
+            return response()->json(['error' => 'Old password is incorrect'], 422);
+        }
+        $user->password = Hash::make($request->newPassword);
+    }
+
+    // Common fields
+    if ($request->filled('fullname')) {
+        $user->fullname = $request->fullname;
+    }
+    if ($request->filled('phone')) {
+        $user->phoneno = $request->phone;
+    }
+    if ($request->filled('email')) {
+        $user->email = $request->email;
+    }
+
+    switch ($user->user_type) {
+        case 'vendor':
+            if ($request->filled('store_name')) {
+                $user->store_name = $request->store_name;
+            }
+            if ($request->filled('business_name')) {
+                $user->business_name = $request->business_name;
+            }
+            if ($request->filled('business_type')) {
+                $user->business_type = $request->business_type;
+            }
+            if ($request->filled('business_registered')) {
+                $user->business_registered = $request->business_registered;
+            }
+            if ($request->filled('business_owner')) {
+                $user->business_owner = $request->business_owner;
+            }
+            if ($request->has('is_not_owner')) {
+                $user->is_not_owner = $request->is_not_owner;
+            }
+            if ($request->filled('latitude')) {
+                $user->latitude = $request->latitude;
+            }
+            if ($request->filled('longitude')) {
+                $user->longitude = $request->longitude;
+            }
+            if ($request->filled('cacNumber')) {
+                $user->cac_certificate = $request->cacNumber;
+            }
+            if ($request->filled('storeAddress')) {
+                $user->address = $request->storeAddress;
+            }
+            if ($request->filled('openingTime')) {
+                $user->opening_time = $request->openingTime;
+            }
+            if ($request->filled('closingTime')) {
+                $user->closing_time = $request->closingTime;
+            }
+            if ($request->filled('storePhoto')) {
+                $user->store_image = ImageKitHelper::uploadFile(
+                    $request->storePhoto,
+                    'vendor_store_' . $user->id . '_' . time()
+                );
+            }
+            if ($request->filled('userImage')) {
+                $user->image = ImageKitHelper::uploadFile(
+                    $request->userImage,
+                    'vendor_profile_' . $user->id . '_' . time()
+                );
+            }
+            break;
+
+        case 'customer':
+            if ($request->filled('storeAddress')) {
+                $user->address = $request->storeAddress;
+            }
+            if ($request->filled('latitude')) {
+                $user->latitude = $request->latitude;
+            }
+            if ($request->filled('longitude')) {
+                $user->longitude = $request->longitude;
+            }
+            if ($request->filled('userImage')) {
+                $user->image = ImageKitHelper::uploadFile(
+                    $request->userImage,
+                    'customer_profile_' . $user->id . '_' . time()
+                );
+            }
+            break;
+
+        case 'rider':
+            if ($request->filled('storeAddress')) {
+                $user->address = $request->storeAddress;
+            }
+            if ($request->filled('vehicle')) {
+                $user->vehicle = $request->vehicle;
+            }
+            if ($request->filled('licenseNumber')) {
+                $user->license_number = $request->licenseNumber;
+            }
+            if ($request->filled('idDocument')) {
+                $user->id_document = ImageKitHelper::uploadFile(
+                    $request->idDocument,
+                    'rider_id_' . $user->id . '_' . time()
+                );
+            }
+            if ($request->filled('userImage')) {
+                $user->image = ImageKitHelper::uploadFile(
+                    $request->userImage,
+                    'rider_profile_' . $user->id . '_' . time()
+                );
+            }
+            break;
+    }
+
+    $user->save();
+
+    return response()->json([
+        'message' => 'Profile updated successfully',
+        'user'    => $user->fresh(),
+    ]);
+}
 
     /**
      * Toggle user active/blocked status (admin only)
