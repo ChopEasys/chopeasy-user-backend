@@ -318,6 +318,8 @@ class VendorProductController extends Controller
                 'users.country',
                 'users.is_verified',
                 'users.created_at',
+                'users.closing_time',
+                'users.opening_time',
                 'users.store_name',
                 'users.store_image',
                 'users.cac_certificate',
@@ -405,6 +407,8 @@ case 'price-low':
                 'reviews' => $reviews->review_count ?? 0,
                 'delivery_time' => $vendor->delivery_time ?? '15-30 min',
                 'address' => $vendor->address,
+                'opening_time'=> $vendor->opening_time,
+                'closing_time'=> $vendor->closing_time,
                 'state' => $vendor->state,
                 'country' => $vendor->country,
                 'logo' => $vendor->store_image,
@@ -539,7 +543,8 @@ case 'price-low':
             ? (float) $item->vendor_price
             : (float) ($item->price ?? 0);
         $quantity = max((int) ($item->quantity ?? 0), 0);
-        $isOutOfStock = $quantity <= 0;
+        $manualOutOfStock = (bool) ($item->manual_out_of_stock ?? false);
+        $isOutOfStock = $quantity <= 0 || $manualOutOfStock;
         $isLowStock = !$isOutOfStock && $quantity < 5;
         $stockStatus = $isOutOfStock ? 'out_of_stock' : ($isLowStock ? 'low_stock' : 'in_stock');
 
@@ -564,6 +569,7 @@ case 'price-low':
             'weight' => $weight,
             'weight_label' => $uomDisplay,
             'quantity' => $quantity,
+            'manual_out_of_stock' => $manualOutOfStock,
             'stock_status' => $stockStatus,
             'stock_label' => $isOutOfStock ? 'Out of stock' : ($isLowStock ? 'Low stock' : 'In stock'),
             'is_low_stock' => $isLowStock,

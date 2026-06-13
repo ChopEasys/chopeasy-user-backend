@@ -392,6 +392,7 @@ class AuthController extends Controller
                         'customer_profile_' . $user->id . '_' . time()
                     );
                 }
+                $user->save();
                 break;
 
             case 'rider':
@@ -405,10 +406,9 @@ class AuthController extends Controller
                         'rider_id_' . $user->id . '_' . time()
                     );
                 }
+                $user->save();
                 break;
         }
-
-        $user->save();
 
         return response()->json([
             'message' => 'Profile updated successfully',
