@@ -45,6 +45,8 @@ class Order extends Model
         'pickup_longitude',
         'delivery_latitude',
         'delivery_longitude',
+        'delivery_cycle',
+        'expected_delivery_date',
     ];
 
     protected $casts = [
@@ -71,6 +73,7 @@ class Order extends Model
         'pickup_longitude' => 'decimal:8',
         'delivery_latitude' => 'decimal:8',
         'delivery_longitude' => 'decimal:8',
+        'expected_delivery_date' => 'date',
     ];
 
 
@@ -160,5 +163,80 @@ class Order extends Model
     public function riderPayouts()
     {
         return $this->hasMany(RiderPayout::class);
+    }
+
+    /**
+     * Calculate delivery cycle based on order placement date
+     * Cycle 1: Orders placed Saturday-Tuesday -> Delivered Wednesday-Friday
+     * Cycle 2: Orders placed Wednesday-Friday -> Delivered Saturday-Tuesday
+     */
+    public static function calculateDeliveryCycle($orderDate = null)
+    {
+        $date = $orderDate ? \Carbon\Carbon::parse($orderDate) : \Carbon\Carbon::now();
+        $dayOfWeek = $date->dayOfWeek; // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+
+        // Saturday (6), Sunday (0), Monday (1), Tuesday (2) -> Cycle 1
+        if ($dayOfWeek >= 6 || $dayOfWeek <= 2) {
+            return 'cycle_1';
+        }
+
+        // Wednesday (3), Thursday (4), Friday (5) -> Cycle 2
+        return 'cycle_2';
+    }
+
+    /**
+     * Calculate expected delivery date based on delivery cycle
+     */
+    public static function calculateExpectedDeliveryDate($orderDate = null)
+    {
+        $date = $orderDate ? \Carbon\Carbon::parse($orderDate) : \Carbon\Carbon::now();
+        $cycle = self::calculateDeliveryCycle($date);
+
+        if ($cycle === 'cycle_1') {
+            // Orders placed Saturday-Tuesday -> Delivered Wednesday
+            return $date->next(\Carbon\Carbon::WEDNESDAY);
+        } else {
+            // Orders placed Wednesday-Friday -> Delivered Saturday
+            return $date->next(\Carbon\Carbon::SATURDAY);
+        }
+    }
+
+    /**
+     * Get delivery cycle label
+     */
+    public function getDeliveryCycleLabelAttribute()
+    {
+        return match($this->delivery_cycle) {
+            'cycle_1' => 'Wednesday - Friday Delivery',
+            'cycle_2' => 'Saturday - Tuesday Delivery',
+            default => 'Standard Delivery',
+        };
+    }
+
+    /**
+     * Check if order is in current delivery cycle for riders
+     */
+    public function isInCurrentDeliveryCycle()
+    {
+        if (!$this->expected_delivery_date) {
+            return false;
+        }
+
+        $today = \Carbon\Carbon::now();
+        $deliveryDate = \Carbon\Carbon::parse($this->expected_delivery_date);
+        $cycle = self::calculateDeliveryCycle($today);
+
+        // Calculate the delivery window for the current cycle
+        if ($cycle === 'cycle_1') {
+            // Current cycle is Wednesday-Friday delivery
+            $windowStart = $today->copy()->startOfWeek()->addDays(2); // Wednesday
+            $windowEnd = $today->copy()->startOfWeek()->addDays(4); // Friday
+        } else {
+            // Current cycle is Saturday-Tuesday delivery
+            $windowStart = $today->copy()->startOfWeek()->addDays(5); // Saturday
+            $windowEnd = $today->copy()->endOfWeek(); // Tuesday (end of week)
+        }
+
+        return $deliveryDate->between($windowStart, $windowEnd);
     }
 }

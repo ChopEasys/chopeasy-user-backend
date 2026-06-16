@@ -13,6 +13,7 @@ class AgentBankDetail extends Model
         'bank_code',
         'account_number',
         'account_name',
+        'recipient_code',
     ];
 
     public function user(): BelongsTo

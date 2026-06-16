@@ -15,6 +15,11 @@ class AgentWithdrawal extends Model
         'bank_code',
         'account_number',
         'account_name',
+        'recipient_code',
+        'transfer_code',
+        'transfer_reference',
+        'failure_reason',
+        'paid_at',
     ];
 
     protected $casts = [

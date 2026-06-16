@@ -5,12 +5,83 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\AgentEarning;
 use App\Models\AgentWithdrawal;
+use App\Models\AgentBankDetail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class AdminAgentWithdrawalController extends Controller
 {
+    protected function basePaystackUrl(): string
+    {
+        return rtrim(env('PAYSTACK_PAYMENT_URL', 'https://api.paystack.co'), '/');
+    }
+
+    protected function paystackSecretKey(): ?string
+    {
+        $secretKey = env('PAYSTACK_SECRET_KEY');
+        return is_string($secretKey) && trim($secretKey) !== '' ? trim($secretKey) : null;
+    }
+
+    protected function paystackConfigured(): bool
+    {
+        return $this->paystackSecretKey() !== null;
+    }
+
+    protected function createTransferRecipient(AgentBankDetail $bankDetails): string
+    {
+        $response = Http::withToken($this->paystackSecretKey())
+            ->post($this->basePaystackUrl() . '/transferrecipient', [
+                'type' => 'nuban',
+                'name' => $bankDetails->account_name,
+                'account_number' => $bankDetails->account_number,
+                'bank_code' => $bankDetails->bank_code,
+                'currency' => 'NGN',
+            ]);
+
+        if (!$response->ok() || $response->json('status') !== true) {
+            throw new \RuntimeException($response->json('message') ?? 'Unable to create transfer recipient.');
+        }
+
+        $recipientCode = trim((string) $response->json('data.recipient_code'));
+
+        if ($recipientCode === '') {
+            throw new \RuntimeException('Transfer recipient code was not returned by Paystack.');
+        }
+
+        $bankDetails->forceFill(['recipient_code' => $recipientCode])->save();
+
+        return $recipientCode;
+    }
+
+    protected function initiateTransfer(string $recipientCode, float $amount, string $reason): array
+    {
+        $response = Http::withToken($this->paystackSecretKey())
+            ->post($this->basePaystackUrl() . '/transfer', [
+                'source' => 'balance',
+                'amount' => (int) round($amount * 100),
+                'recipient' => $recipientCode,
+                'reason' => $reason,
+            ]);
+
+        if (!$response->ok() || $response->json('status') !== true) {
+            throw new \RuntimeException($response->json('message') ?? 'Unable to initiate transfer.');
+        }
+
+        return $response->json('data') ?? [];
+    }
+
+    protected function normalizedTransferStatus(?string $status): string
+    {
+        return match (strtolower(trim((string) $status))) {
+            'success' => 'paid',
+            'pending', 'otp', 'received', 'queued', 'processing' => 'processing',
+            default => 'processing',
+        };
+    }
+
     /**
      * List agent withdrawal requests
      */
@@ -106,8 +177,61 @@ class AdminAgentWithdrawalController extends Controller
                 return response()->json(['error' => 'Withdrawal already processed'], 422);
             }
 
-            $withdrawal->status = 'approved';
-            $withdrawal->save();
+            if (!$this->paystackConfigured()) {
+                $withdrawal->status = 'approved';
+                $withdrawal->failure_reason = 'Paystack secret key is not configured. Manual transfer required.';
+                $withdrawal->save();
+
+                return response()->json([
+                    'data' => $this->formatWithdrawal($withdrawal->fresh('agent')),
+                ]);
+            }
+
+            $bankDetails = AgentBankDetail::where('user_id', $withdrawal->agent_id)->first();
+            if (!$bankDetails) {
+                $withdrawal->status = 'approved';
+                $withdrawal->failure_reason = 'No bank details found for agent. Manual transfer required.';
+                $withdrawal->save();
+
+                return response()->json([
+                    'data' => $this->formatWithdrawal($withdrawal->fresh('agent')),
+                ]);
+            }
+
+            try {
+                $recipientCode = filled($bankDetails->recipient_code)
+                    ? trim((string) $bankDetails->recipient_code)
+                    : $this->createTransferRecipient($bankDetails);
+
+                $transfer = $this->initiateTransfer(
+                    $recipientCode,
+                    (float) $withdrawal->amount,
+                    sprintf('Agent withdrawal for agent %s', $withdrawal->agent?->fullname ?? $withdrawal->agent_id)
+                );
+
+                $status = $this->normalizedTransferStatus($transfer['status'] ?? null);
+
+                $withdrawal->fill([
+                    'recipient_code' => $recipientCode,
+                    'transfer_code' => $transfer['transfer_code'] ?? null,
+                    'transfer_reference' => $transfer['reference'] ?? null,
+                    'status' => $status,
+                    'failure_reason' => $status === 'paid' ? null : 'Transfer initiated but not yet confirmed',
+                    'paid_at' => $status === 'paid' ? now() : null,
+                ])->save();
+            } catch (\Throwable $exception) {
+                Log::warning('Agent withdrawal transfer failed.', [
+                    'withdrawal_id' => $withdrawal->id,
+                    'agent_id' => $withdrawal->agent_id,
+                    'error' => $exception->getMessage(),
+                ]);
+
+                $withdrawal->fill([
+                    'status' => 'approved',
+                    'failure_reason' => $exception->getMessage(),
+                    'paid_at' => null,
+                ])->save();
+            }
 
             return response()->json([
                 'data' => $this->formatWithdrawal($withdrawal->fresh('agent')),

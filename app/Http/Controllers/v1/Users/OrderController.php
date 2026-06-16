@@ -517,6 +517,8 @@ class OrderController extends Controller
                 'next_due_date' => $nextDueDate,
                 'vendor_order_code' => $mainVendorOrderCode,
                 'delivery_address' => $request->delivery_address,
+                'delivery_cycle' => Order::calculateDeliveryCycle(),
+                'expected_delivery_date' => Order::calculateExpectedDeliveryDate(),
             ], $this->formatPricingAttributes($pricingData)));
 
             $this->createOrderItems($order, $reservedItems, $mainVendorOrderCode);
@@ -1437,6 +1439,8 @@ class OrderController extends Controller
                 'next_due_date' => $nextDueDate,
                 'status' => 'pending',
                 'delivery_address' => $oldOrder->delivery_address,
+                'delivery_cycle' => Order::calculateDeliveryCycle(),
+                'expected_delivery_date' => Order::calculateExpectedDeliveryDate(),
             ], $this->formatPricingAttributes($pricingData)));
 
             $this->createOrderItems($newOrder, $reservedItems, $newOrder->vendor_order_code);
