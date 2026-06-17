@@ -86,11 +86,16 @@ class PricingService
 
         $zone = RiderPayoutRule::findZoneForDistance($distanceInKm, $this->regionId);
         $distanceFee = $zone ? $zone->getZoneFee() : 0;
-        $deliveryFeeTotal = $baseFee + $weightFee + $distanceFee;
+
+        // Base fee is only added if customer subtotal is 10,000 Naira or more
+        $appliedBaseFee = $resolvedCustomerSubtotal >= 10000 ? $baseFee : 0;
+        $deliveryFeeTotal = $appliedBaseFee + $weightFee + $distanceFee;
 
         return [
             'base_charge' => round($baseFee, 2),
-            'base_fee' => round($baseFee, 2),
+            'base_fee' => round($appliedBaseFee, 2),
+            'base_fee_applied' => round($appliedBaseFee, 2),
+            'base_fee_waived' => $resolvedCustomerSubtotal < 10000,
             'weight_fee' => round($weightFee, 2),
             'weight_service_fee' => round($weightFee, 2),
             'weight_platform_percentage' => round($platformPct, 2),
