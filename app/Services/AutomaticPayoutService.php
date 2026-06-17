@@ -162,6 +162,12 @@ class AutomaticPayoutService
                 'currency' => 'NGN',
             ]);
 
+        Log::info('Paystack createTransferRecipient response', [
+            'status' => $response->status(),
+            'body' => $response->body(),
+            'json' => $response->json(),
+        ]);
+
         if (!$response->ok() || $response->json('status') !== true) {
             throw new \RuntimeException($response->json('message') ?? 'Unable to create transfer recipient.');
         }
@@ -186,6 +192,14 @@ class AutomaticPayoutService
                 'recipient' => $recipientCode,
                 'reason' => $reason,
             ]);
+
+        Log::info('Paystack initiateTransfer response', [
+            'recipient_code' => $recipientCode,
+            'amount' => $amount,
+            'status' => $response->status(),
+            'body' => $response->body(),
+            'json' => $response->json(),
+        ]);
 
         if (!$response->ok() || $response->json('status') !== true) {
             throw new \RuntimeException($response->json('message') ?? 'Unable to initiate transfer.');
