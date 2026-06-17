@@ -168,7 +168,9 @@ class AutomaticPayoutService
             'json' => $response->json(),
         ]);
 
-        if (!$response->ok() || $response->json('status') !== true) {
+        // FIX: Paystack returns 201 on create, and Laravel's ->ok() only matches
+        // exactly 200. ->successful() covers the whole 2xx range.
+        if (!$response->successful() || $response->json('status') !== true) {
             throw new \RuntimeException($response->json('message') ?? 'Unable to create transfer recipient.');
         }
 
@@ -201,7 +203,8 @@ class AutomaticPayoutService
             'json' => $response->json(),
         ]);
 
-        if (!$response->ok() || $response->json('status') !== true) {
+        // FIX: same ->ok() vs ->successful() issue as above.
+        if (!$response->successful() || $response->json('status') !== true) {
             throw new \RuntimeException($response->json('message') ?? 'Unable to initiate transfer.');
         }
 
@@ -210,11 +213,25 @@ class AutomaticPayoutService
 
     protected function normalizedTransferStatus(?string $status): string
     {
-        return match (strtolower(trim((string) $status))) {
+        $normalized = strtolower(trim((string) $status));
+
+        return match ($normalized) {
             'success' => 'paid',
             'pending', 'otp', 'received', 'queued', 'processing' => 'processing',
-            default => 'processing',
+            // FIX: a declined/reversed transfer must surface as failed, not
+            // silently sit as "processing" forever.
+            'failed', 'reversed' => 'failed',
+            default => $this->logUnrecognizedTransferStatus($normalized),
         };
+    }
+
+    private function logUnrecognizedTransferStatus(string $normalized): string
+    {
+        Log::warning('Unrecognized Paystack transfer status, defaulting to processing.', [
+            'status' => $normalized,
+        ]);
+
+        return 'processing';
     }
 
     protected function fillBankFields(Model $payout, ?Model $bankDetails): Model
