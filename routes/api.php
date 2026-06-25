@@ -51,6 +51,8 @@ Route::prefix('v1')->group(function () {
     Route::group(["middleware" => ["auth:api"]], function () {
         Route::prefix('agent')->group(function () {
             Route::get('dashboard', [AgentController::class, 'dashboard']);
+            Route::get('tier-upgrade-eligibility', [AgentController::class, 'tierUpgradeEligibility']);
+Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade']);
             Route::get('withdrawal-prefix-sums', [AgentController::class, 'withdrawalPrefixSums']);
             Route::get('transactions', [AgentController::class, 'transactions']);
             Route::get('referred-customers', [AgentController::class, 'referredCustomers']);
@@ -61,6 +63,7 @@ Route::prefix('v1')->group(function () {
             Route::get('banks', [AgentController::class, 'listBanks']);
             Route::post('bank-details/resolve', [AgentController::class, 'resolveBankDetails']);
             Route::post('withdrawals', [AgentController::class, 'requestWithdrawal']);
+            Route::post('apply-delivery-agent', [AgentController::class, 'applyToBecomeDeliveryAgent']);
         });
 
         Route::prefix('account')->group(function () {
@@ -116,7 +119,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/vendor/{vendorOrder}/ready', [VendorOrderController::class, 'toggleItemReady']);
         });
 
-         Route::prefix('rider')->group(function () {
+         Route::prefix('agent')->group(function () {
             Route::get('available-pickups', [OrderController::class, 'availablePickups']);
             Route::post('accept-delivery/{orderId}', [OrderController::class, 'acceptDelivery']);
             Route::get('my-pickups', [OrderController::class, 'myPickups']);
@@ -145,7 +148,12 @@ Route::prefix('v1')->group(function () {
         Route::get('/admin/vendors/{id}', [AdminVendorController::class, 'show']);
         Route::get('/admin/products', [AdminProductController::class, 'index']);
         Route::get('/admin/agents', [AdminAgentController::class, 'index']);
+          Route::get('/admin/agents/tier-upgrades', [AdminAgentController::class, 'getTierUpgradeRequests']);
+         Route::get('/admin/agents/tier-configs', [AdminAgentController::class, 'getDeliveryTierConfigs']);
+              Route::get('/admin/agents/applications', [AdminAgentController::class, 'getDeliveryApplications']);
         Route::get('/admin/agents/{id}', [AdminAgentController::class, 'show']);
+        Route::post('/admin/agents/{id}/approve-delivery-agent', [AdminAgentController::class, 'approveDeliveryAgent']);
+        Route::post('/admin/agents/{id}/reject-delivery-agent', [AdminAgentController::class, 'rejectDeliveryAgent']);
         Route::get('/admin/agent-withdrawals', [AdminAgentWithdrawalController::class, 'index']);
         Route::get('/admin/agent-withdrawals/history', [AdminAgentWithdrawalController::class, 'history']);
         Route::post('/admin/agent-withdrawals/{id}/approve', [AdminAgentWithdrawalController::class, 'approve']);

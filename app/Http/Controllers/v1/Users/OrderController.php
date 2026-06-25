@@ -4,6 +4,7 @@ namespace App\Http\Controllers\v1\Users;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use App\Models\AgentEarning;
 use App\Models\OrderItem;
 use App\Models\OrderStatusLog;
 use App\Models\Transaction;
@@ -22,6 +23,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Cookie as SymfonyCookie;
 use Illuminate\Support\Str;
+use App\Support\DeliveryTier;
+
 
 class OrderController extends Controller
 {
@@ -370,10 +373,10 @@ class OrderController extends Controller
                 try {
                     app(VendorStockNotifier::class)->notifyIfJustWentOutOfStock($entry['model']);
                 } catch (\Throwable $e) {
-                    Log::warning('Vendor stock notifier failed after inventory decrement', [
-                        'vendor_product_item_id' => $entry['model']->id,
-                        'error' => $e->getMessage(),
-                    ]);
+                    // Log::warning('Vendor stock notifier failed after inventory decrement', [
+                    //     'vendor_product_item_id' => $entry['model']->id,
+                    //     'error' => $e->getMessage(),
+                    // ]);
                 }
             }
         }
@@ -921,13 +924,36 @@ class OrderController extends Controller
                     'fulfilled_at' => now(),
                 ]
             );
+
+            // Credit agent wallet with delivery fee upon delivery confirmation
+            if ($order->accepted_by) {
+                $agent = User::find($order->accepted_by);
+                if ($agent && $agent->user_type === 'agent') {
+                    $deliveryFee = $order->rider_payout ?? $order->rider_payout ?? 0;
+                    if ($deliveryFee > 0) {
+                        $agent->increment('main_wallet', $deliveryFee);
+
+                        // Create earning record for the agent
+                        AgentEarning::create([
+                            'agent_id' => $agent->id,
+                            'amount' => $deliveryFee,
+                            'order_amount' => $order->total_amount,
+                            'earning_type' => 'delivery_fee',
+                            'order_id' => $order->id,
+                            'earning_type' => 'delivery_fee',
+                            'order_number' => $order->order_number,
+                            'status' => 'completed',
+                        ]);
+                    }
+                }
+            }
         });
 
         $fresh = $order->fresh(['items.vendorOrders.vendor', 'user']);
-        $riderPayout = $automaticPayoutService->processRiderPayoutForOrder($fresh);
-        $vendorCatchUp = $automaticPayoutService->processVendorPayoutsIfOutstanding(
-            $order->fresh(['items.vendorOrders.vendor', 'user'])
-        );
+        // $riderPayout = $automaticPayoutService->processRiderPayoutForOrder($fresh);
+        // $vendorCatchUp = $automaticPayoutService->processVendorPayoutsIfOutstanding(
+        //     $order->fresh(['items.vendorOrders.vendor', 'user'])
+        // );
 
         $orderForCommission = $order->fresh(['user']);
         $agentCommissionService->creditCustomerOrderOnDeliveryConfirm($orderForCommission);
@@ -937,7 +963,7 @@ class OrderController extends Controller
             'message' => 'Order confirmed successfully',
             'payouts' => [
                 'rider_payout' => $riderPayout,
-                'vendor_payouts' => $vendorCatchUp,
+                // 'vendor_payouts' => $vendorCatchUp,
             ],
         ]);
     }
@@ -1569,130 +1595,184 @@ class OrderController extends Controller
         return array_values($groups);
     }
 
-    public function availablePickups(Request $request)
-    {
-        $rider = $request->user();
 
-        if ($rider->user_type !== 'rider') {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
 
-        // Catch-up assignment for ready orders, including stale offers created before
-        // assignment used vendor pickup coordinates.
-        $assignmentService = app(RiderAssignmentService::class);
-        $readyOrders = Order::where('status', 'ready')
-            ->paidForFulfillment()
-            ->latest()
-            ->take(50)
-            ->get();
+public function availablePickups(Request $request)
+{
+    $agent = $request->user();
 
-        foreach ($readyOrders as $readyOrder) {
-            $assignmentService->assignNearestRider($readyOrder, true);
-        }
-
-        $orders = Order::with(['items.vendorOrders.vendor', 'user'])
-            ->where('status', 'ready')
-            ->paidForFulfillment()
-            ->where('accepted_by', $rider->id)
-            ->get()
-            ->map(function ($order) {
-                $vendorGroups = $this->buildVendorPickupGroups($order);
-                $stopCount = count($vendorGroups);
-                $first = $vendorGroups[0] ?? null;
-
-                $summaryVendorName = $stopCount > 1
-                    ? 'Multiple stores ('.$stopCount.' pickups)'
-                    : ($first['vendor_name'] ?? null);
-
-                return [
-                    'id' => $order->id,
-                    'order_number' => $order->order_number,
-                    'multi_vendor' => $stopCount > 1,
-                    'vendor_stop_count' => $stopCount,
-
-                    'vendor_name' => $summaryVendorName,
-                    'vendor_phone' => $stopCount === 1 ? ($first['vendor_phone'] ?? null) : null,
-                    'pickup_address' => $stopCount === 1 ? ($first['pickup_address'] ?? null) : null,
-                    'vendor_address' => $stopCount === 1 ? ($first['pickup_address'] ?? null) : null,
-                    'pickup_latitude' => $first['pickup_latitude'] ?? null,
-                    'pickup_longitude' => $first['pickup_longitude'] ?? null,
-
-                    'customer_name' => $order->user->fullname ?? null,
-                    'customer_phone' => $order->user->phoneno ?? null,
-                    'dropoff_address' => $order->delivery_address,
-                    'customer_address' => $order->delivery_address,
-                    'delivery_latitude' => $order->delivery_latitude,
-                    'delivery_longitude' => $order->delivery_longitude,
-
-                    'status' => $order->status,
-                    'accepted_by' => $order->accepted_by,
-
-                    'items' => $order->items->map(fn ($item) => $this->formatOrderItemRowWithVendor($item))->values(),
-                    'vendor_pickup_stops' => $vendorGroups,
-                ];
-            });
-
-        return response()->json($orders);
+    if ($agent->user_type !== 'agent') {
+        return response()->json(['error' => 'Unauthorized'], 403);
     }
 
-    public function acceptDelivery(Request $request, $orderId, AutomaticPayoutService $automaticPayoutService, AgentCommissionService $agentCommissionService)
-    {
-        $rider = $request->user();
-
-        if ($rider->user_type !== 'rider') {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        $rider->loadMissing('riderBankDetails');
-
-        if (!$rider->riderBankDetails) {
-            return response()->json([
-                'error' => 'Please add your bank account details before accepting deliveries.',
-            ], 422);
-        }
-
-        $order = Order::where('id', $orderId)
-            ->where('status', 'ready')
-            ->paidForFulfillment()
-            ->where(function ($q) use ($rider) {
-                $q->whereNull('accepted_by')
-                    ->orWhere('accepted_by', $rider->id);
-            })
-            ->first();
-
-        if (!$order) {
-            return response()->json(['error' => 'Order already taken or not available'], 400);
-        }
-
-        $order->update([
-            'accepted_by' => $rider->id,
-            'status' => 'ongoing',
-        ]);
-
-        $vendorPayouts = $automaticPayoutService->processVendorPayoutsForOrder(
-            $order->fresh(['items.vendorOrders.vendor', 'user'])
-        );
-
-        $agentCommissionService->creditVendorReferralsAfterPayout(
-            $order->fresh(['items.vendorOrders.vendor', 'user']),
-            $vendorPayouts
-        );
-
+    if (!$agent->is_delivery_agent) {
         return response()->json([
-            'message' => 'Delivery accepted successfully',
-            'order_id' => $order->id,
-            'status' => $order->status,
-            'vendor_payouts' => $vendorPayouts,
+            'error' => false,
+            'message' => 'You are not yet an approved delivery agent.',
+            'data' => [],
         ]);
     }
 
+    // Catch-up assignment for ready orders, including stale offers created before
+    // assignment used vendor pickup coordinates.
+    $assignmentService = app(RiderAssignmentService::class);
+    $readyOrders = Order::where('status', 'ready')
+        ->paidForFulfillment()
+        ->latest()
+        ->take(50)
+        ->get();
+
+    foreach ($readyOrders as $readyOrder) {
+        $assignmentService->assignNearestRider($readyOrder, true);
+    }
+
+    $agentTier = (int) ($agent->delivery_tier ?? 1);
+
+    $orders = Order::with(['items.vendorOrders.vendor', 'user'])
+        ->where('status', 'ready')
+        ->paidForFulfillment()
+        ->where('accepted_by', $agent->id)
+        ->get()
+        ->filter(function ($order) use ($agentTier) {
+        return DeliveryTier::tierCanHandle($agentTier, $order->fulfillmentAmount());
+    })
+        ->map(function ($order) {
+            $vendorGroups = $this->buildVendorPickupGroups($order);
+            $stopCount = count($vendorGroups);
+            $first = $vendorGroups[0] ?? null;
+
+            $summaryVendorName = $stopCount > 1
+                ? 'Multiple stores ('.$stopCount.' pickups)'
+                : ($first['vendor_name'] ?? null);
+
+            return [
+                'id' => $order->id,
+                'order_number' => $order->order_number,
+                'multi_vendor' => $stopCount > 1,
+                'vendor_stop_count' => $stopCount,
+
+                'vendor_name' => $summaryVendorName,
+                'vendor_phone' => $stopCount === 1 ? ($first['vendor_phone'] ?? null) : null,
+                'pickup_address' => $stopCount === 1 ? ($first['pickup_address'] ?? null) : null,
+                'vendor_address' => $stopCount === 1 ? ($first['pickup_address'] ?? null) : null,
+                'pickup_latitude' => $first['pickup_latitude'] ?? null,
+                'pickup_longitude' => $first['pickup_longitude'] ?? null,
+
+                'customer_name' => $order->user->fullname ?? null,
+                'customer_phone' => $order->user->phoneno ?? null,
+                'dropoff_address' => $order->delivery_address,
+                'customer_address' => $order->delivery_address,
+                'delivery_latitude' => $order->delivery_latitude,
+                'delivery_longitude' => $order->delivery_longitude,
+
+                'status' => $order->status,
+                'accepted_by' => $order->accepted_by,
+
+                'items' => $order->items->map(fn ($item) => $this->formatOrderItemRowWithVendor($item))->values(),
+                'vendor_pickup_stops' => $vendorGroups,
+            ];
+        })
+        ->values();
+
+    return response()->json([
+        'error' => false,
+        'message' => 'Available pickups fetched successfully',
+        'data' => $orders,
+    ]);
+}
+
+   protected function success($data = null, string $message = 'Success', int $status = 200)
+    {
+        return response()->json([
+            'error' => false,
+            'message' => $message,
+            'data' => $data,
+        ], $status);
+    }
+
+    protected function failure(string $message, int $status = 400, $data = null)
+    {
+        return response()->json([
+            'error' => true,
+            'message' => $message,
+            'data' => $data,
+        ], $status);
+    }
+
+public function acceptDelivery(Request $request, $orderId, AutomaticPayoutService $automaticPayoutService, AgentCommissionService $agentCommissionService)
+{
+    $agent = $request->user();
+
+    if ($agent->user_type !== 'agent') {
+        return response()->json(['error' => 'Unauthorized'], 403);
+    }
+
+    if (!$agent->is_delivery_agent) {
+        return response()->json(['error' => 'You are not an approved delivery agent.'], 403);
+    }
+
+    $agent->loadMissing('agentBankDetails');
+
+    if (!$agent->agentBankDetails) {
+            return $this->failure(
+        'Please add your bank account details before accepting deliveries.',
+        422
+    );
+    }
+
+    $order = Order::with('items')
+        ->where('id', $orderId)
+        ->where('status', 'ready')
+        ->paidForFulfillment()
+        ->where(function ($q) use ($agent) {
+            $q->whereNull('accepted_by')
+                ->orWhere('accepted_by', $agent->id);
+        })
+        ->first();
+
+    if (!$order) {
+        return response()->json(['error' => 'Order already taken or not available'], 400);
+    }
+
+$agentTier = (int) ($agent->delivery_tier ?? 1);
+if (!\App\Support\DeliveryTier::tierCanHandle($agentTier, $order->fulfillmentAmount())) {
+    return response()->json([
+        'error' => 'This order exceeds your current delivery tier limit. Upgrade your tier to accept larger orders.',
+    ], 403);
+}
+if (!$order) {
+    return $this->failure(
+        'Order already taken or not available.',
+        400
+    );
+}
+
+    $order->update([
+        'accepted_by' => $agent->id,
+        'status' => 'ongoing',
+    ]);
+
+    $vendorPayouts = $automaticPayoutService->processVendorPayoutsForOrder(
+        $order->fresh(['items.vendorOrders.vendor', 'user'])
+    );
+
+    $agentCommissionService->creditVendorReferralsAfterPayout(
+        $order->fresh(['items.vendorOrders.vendor', 'user']),
+        $vendorPayouts
+    );
+return $this->success([
+    'order_id' => $order->id,
+    'status' => $order->status,
+    'vendor_payouts' => $vendorPayouts,
+], 'Delivery accepted successfully');
+}
     public function myPickups(Request $request)
     {
         $rider = $request->user();
 
-        if ($rider->user_type !== 'rider') {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
+       if ($rider->user_type !== 'agent') {  
+        return response()->json(['error' => 'Unauthorized'], 403);
+    }
 
         $orders = Order::with(['items.vendorOrders.vendor', 'user']) // include vendor + customer
             ->where('accepted_by', $rider->id)
@@ -1735,7 +1815,11 @@ class OrderController extends Controller
                 ];
             });
 
-        return response()->json($orders);
+      return response()->json([
+    'error' => false,
+    'message' => 'My pickups fetched successfully',
+    'data' => $orders,
+]);
     }
 }
 

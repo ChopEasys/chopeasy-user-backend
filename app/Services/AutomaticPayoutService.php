@@ -408,39 +408,15 @@ class AutomaticPayoutService
 
     /**
      * Rider payout when the customer confirms receipt.
+     * REMOVED: Riders are being replaced by agents. Agents will receive delivery fees in their wallet
+     * upon delivery confirmation and can manually request withdrawals.
      *
      * @return array<string, mixed>|null
      */
     public function processRiderPayoutForOrder(Order $order): ?array
     {
-        $order->loadMissing(['items.vendorOrders.vendor', 'user']);
-
-        $resolvedRiderAmount = $this->resolveRiderPayoutAmount($order);
-        if ($resolvedRiderAmount > 0 && abs($resolvedRiderAmount - (float) ($order->rider_payout ?? 0)) > 0.009) {
-            $order->update(['rider_payout' => $resolvedRiderAmount]);
-            $order->refresh();
-        }
-
-        if ((int) ($order->accepted_by ?? 0) <= 0 || $resolvedRiderAmount <= 0) {
-            return null;
-        }
-
-        $rider = User::find((int) $order->accepted_by);
-        if (!$rider instanceof User) {
-            return null;
-        }
-
-        $riderPayout = $this->processRiderPayout($order, $rider, $resolvedRiderAmount);
-
-        return [
-            'id' => $riderPayout->id,
-            'rider_id' => $riderPayout->rider_id,
-            'order_id' => $riderPayout->order_id,
-            'amount' => (float) $riderPayout->amount,
-            'status' => $riderPayout->status,
-            'failure_reason' => $riderPayout->failure_reason,
-            'transfer_reference' => $riderPayout->transfer_reference,
-        ];
+        // Rider automatic payouts disabled - replaced by agent wallet system
+        return null;
     }
 
     /**

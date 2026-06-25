@@ -94,6 +94,20 @@ class Order extends Model
         return false;
     }
 
+    /**
+ * Total fulfillment amount for this order, based on its line items
+ * (price_at_order * quantity). Used for delivery-tier eligibility —
+ * not total_amount, which includes fees.
+ */
+public function fulfillmentAmount(): float
+{
+    $items = $this->relationLoaded('items') ? $this->items : $this->items()->get();
+
+    return (float) $items->sum(function ($item) {
+        return (float) $item->price_at_order * (int) $item->quantity;
+    });
+}
+
     public function scopePaidForFulfillment($query)
     {
         return $query->where(function ($q) {

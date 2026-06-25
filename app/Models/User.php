@@ -55,6 +55,9 @@ class User extends Authenticatable implements JWTSubject
         'vehicle',
         'referred_by_agent_id',
         'onboarding_completed',
+        'is_delivery_agent',
+        'delivery_agent_application_status',
+        'delivery_agent_tier',
     ];
 
     protected $hidden = ['password', 'remember_token', 'email_otp'];
@@ -68,6 +71,7 @@ class User extends Authenticatable implements JWTSubject
         'can_login' => 'boolean',
         'onboarding_completed' => 'boolean',
         'two_fa' => 'boolean',
+        'is_delivery_agent' => 'boolean',
     ];
 
     // public function sendPasswordResetNotification($token)

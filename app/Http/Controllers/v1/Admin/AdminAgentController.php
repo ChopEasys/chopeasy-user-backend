@@ -1,24 +1,22 @@
 <?php
 
-namespace App\Http\Controllers\Admin;
+namespace App\Http\Controllers\v1\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\AgentEarning;
-use App\Models\AgentWithdrawal;
 use App\Models\DeliveryTierConfig;
 use App\Models\User;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use App\Responser\JsonResponser;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class AdminAgentController extends Controller
 {
-
-  /**
+    /**
      * Get all agents with their details
      */
     public function getAgents(Request $request)
     {
+        $this->authorize('admin');
 
         $agents = User::where('user_type', 'agent')
             ->select(
@@ -63,7 +61,7 @@ class AdminAgentController extends Controller
      */
     public function getDeliveryApplications(Request $request)
     {
-        
+        $this->authorize('admin');
 
         $applications = User::where('delivery_agent_application_status', 'pending')
             ->where('user_type', 'agent')
@@ -89,7 +87,7 @@ class AdminAgentController extends Controller
      */
     public function approveDeliveryApplication(Request $request, $agentId)
     {
-        
+        $this->authorize('admin');
 
         $validator = Validator::make($request->all(), [
             'approved' => 'required|boolean',
@@ -128,7 +126,7 @@ class AdminAgentController extends Controller
      */
     public function getTierUpgradeRequests(Request $request)
     {
-        
+        $this->authorize('admin');
 
         $upgrades = User::where('tier_upgrade_status', 'pending')
             ->where('user_type', 'agent')
@@ -164,7 +162,7 @@ class AdminAgentController extends Controller
      */
     public function approveTierUpgrade(Request $request, $agentId)
     {
-        
+        $this->authorize('admin');
 
         $validator = Validator::make($request->all(), [
             'approved' => 'required|boolean',
@@ -189,24 +187,35 @@ class AdminAgentController extends Controller
         if ($approved) {
             $currentTier = (int) ($agent->delivery_tier ?? 1);
             $newTier = $currentTier + 1;
-$currentTier = (int) ($agent->delivery_tier ?? 1);
-$newTier = $currentTier + 1;
 
-$tierNames = [
-    1 => 'Tier 1',
-    2 => 'Tier 2',
-    3 => 'Tier 3',
-    4 => 'Tier 4',
-    5 => 'Tier 5',
-];
+            // Verify the agent meets requirements for new tier
+            $tierConfig = DeliveryTierConfig::where('tier', $newTier)->first();
+            if (!$tierConfig) {
+                return JsonResponser::send(true, 'Tier configuration not found.', null, 500);
+            }
 
-$agent->update([
-    'delivery_tier' => $newTier,
-    'delivery_tier_name' => $tierNames[$newTier] ?? "Tier {$newTier}",
-    'delivery_agent_tier' => 'tier_' . $newTier,
-    'tier_upgrade_status' => 'approved',
-    'tier_upgrade_completed_deliveries_snapshot' => null,
-]);
+            $completedDeliveries = (int) ($agent->tier_upgrade_completed_deliveries_snapshot ?? 0);
+            if ($completedDeliveries < $tierConfig->min_completed_deliveries) {
+                return JsonResponser::send(
+                    true,
+                    'Agent does not meet delivery requirement.',
+                    null,
+                    400
+                );
+            }
+
+            $securityDeposit = (float) $agent->security_wallet_deposit;
+            if (
+                $securityDeposit < $tierConfig->min_security_deposit ||
+                $securityDeposit > $tierConfig->max_security_deposit
+            ) {
+                return JsonResponser::send(
+                    true,
+                    'Security deposit does not meet tier requirements.',
+                    null,
+                    400
+                );
+            }
 
             // Approve upgrade
             $agent->update([
@@ -242,186 +251,107 @@ $agent->update([
         );
     }
 
- public function getDeliveryTierConfigs(Request $request)
-{
-    return JsonResponser::send(false, 'Tier configurations loaded.', [
-        [
-            'tier' => 1,
-            'tier_name' => 'Tier 1',
-            'max_order_amount' => 50000,
-        ],
-        [
-            'tier' => 2,
-            'tier_name' => 'Tier 2',
-            'max_order_amount' => 100000,
-        ],
-        [
-            'tier' => 3,
-            'tier_name' => 'Tier 3',
-            'max_order_amount' => 250000,
-        ],
-    ], 200);
-}
     /**
-     * List all agents for admin with earnings
+     * Get all delivery tier configurations
      */
-    public function index(Request $request): JsonResponse
+    public function getDeliveryTierConfigs(Request $request)
     {
-        $perPage = $request->query('per_page', 15);
-        $search = $request->query('search');
+        $this->authorize('admin');
 
-        $query = User::where('user_type', 'agent')
-            ->with('agentBankDetails')
-            ->when($search, fn($q) => $q->where(function ($q2) use ($search) {
-                $q2->where('fullname', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%");
-            }))
-            ->orderByDesc('created_at');
+        $configs = DeliveryTierConfig::orderBy('tier')
+            ->get()
+            ->map(function ($config) {
+                return [
+                    'id' => $config->id,
+                    'tier' => $config->tier,
+                    'tier_name' => $config->tier_name,
+                    'max_order_amount' => (float) $config->max_order_amount,
+                    'min_completed_deliveries' => (int) $config->min_completed_deliveries,
+                    'min_security_deposit' => (float) $config->min_security_deposit,
+                    'max_security_deposit' => (float) $config->max_security_deposit,
+                    'description' => $config->description,
+                    'active' => (bool) $config->active,
+                    'created_at' => $config->created_at->toIso8601String(),
+                    'updated_at' => $config->updated_at->toIso8601String(),
+                ];
+            });
 
-        $agents = $query->paginate($perPage);
-
-        $agentIds = $agents->pluck('id');
-
-        $totalEarnings = AgentEarning::whereIn('agent_id', $agentIds)
-            ->selectRaw('agent_id, SUM(amount) as total')
-            ->groupBy('agent_id')
-            ->pluck('total', 'agent_id');
-
-        $pendingWithdrawals = AgentWithdrawal::whereIn('agent_id', $agentIds)
-            ->where('status', 'pending')
-            ->selectRaw('agent_id, SUM(amount) as total')
-            ->groupBy('agent_id')
-            ->pluck('total', 'agent_id');
-
-        $formatted = $agents->map(function ($agent) use ($totalEarnings, $pendingWithdrawals) {
-            $bank = $agent->agentBankDetails;
-            $accountNumber = $bank && $bank->account_number
-                ? substr($bank->account_number, 0, 3) . '****' . substr($bank->account_number, -3)
-                : null;
-
-            return [
-                'id' => (string) $agent->id,
-                'name' => $agent->fullname,
-                'email' => $agent->email,
-                'bank_name' => $bank->bank_name ?? null,
-                'account_number' => $accountNumber,
-                'total_earnings' => (float) ($totalEarnings[$agent->id] ?? 0),
-                'pending_withdrawal' => (float) ($pendingWithdrawals[$agent->id] ?? 0),
-                'status' => $agent->is_active ? 'active' : 'blocked',
-            ];
-        });
-
-        return response()->json([
-            'data' => $formatted,
-            'pagination' => [
-                'currentPage' => $agents->currentPage(),
-                'lastPage' => $agents->lastPage(),
-                'perPage' => $agents->perPage(),
-                'total' => $agents->total(),
-            ],
-            'summary' => [
-                'total_agents' => User::where('user_type', 'agent')->count(),
-                'total_earnings' => (float) AgentEarning::sum('amount'),
-                'pending_withdrawals' => (float) AgentWithdrawal::where('status', 'pending')->sum('amount'),
-            ],
-        ]);
+        return JsonResponser::send(false, 'Tier configurations loaded.', $configs, 200);
     }
 
     /**
-     * Get single agent details
+     * Create new tier configuration
      */
-    public function show(int $id): JsonResponse
+    public function createDeliveryTierConfig(Request $request)
     {
-        $agent = User::where('user_type', 'agent')->with('agentBankDetails')->find($id);
+        $this->authorize('admin');
 
-        if (!$agent) {
-            return response()->json(['error' => 'Agent not found'], 404);
+        $validator = Validator::make($request->all(), [
+            'tier_name' => 'required|string|max:100',
+            'max_order_amount' => 'required|numeric|min:0',
+            'min_completed_deliveries' => 'required|integer|min:0',
+            'min_security_deposit' => 'required|numeric|min:0',
+            'max_security_deposit' => 'required|numeric|min:0',
+            'description' => 'sometimes|string|max:500',
+            'active' => 'sometimes|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return JsonResponser::send(true, $validator->errors()->first(), null, 422);
         }
 
-        $totalEarnings = AgentEarning::where('agent_id', $id)->sum('amount');
-        $pendingWithdrawal = AgentWithdrawal::where('agent_id', $id)->where('status', 'pending')->sum('amount');
-        $bank = $agent->agentBankDetails;
+        $data = $validator->validated();
+        $data['active'] = $data['active'] ?? true;
 
-        return response()->json([
-            'data' => [
-                'id' => (string) $agent->id,
-                'name' => $agent->fullname,
-                'email' => $agent->email,
-                'bank_name' => $bank->bank_name ?? null,
-                'account_number' => $bank->account_number ?? null,
-                'account_name' => $bank->account_name ?? null,
-                'total_earnings' => (float) $totalEarnings,
-                'pending_withdrawal' => (float) $pendingWithdrawal,
-                'status' => $agent->is_active ? 'active' : 'blocked',
-            ],
-        ]);
+        // Find next tier number
+        $lastTier = DeliveryTierConfig::max('tier') ?? 0;
+        $data['tier'] = $lastTier + 1;
+
+        $config = DeliveryTierConfig::create($data);
+
+        return JsonResponser::send(false, 'Tier configuration created.', $config, 201);
     }
 
     /**
-     * Approve delivery agent application
+     * Update tier configuration
      */
-    public function approveDeliveryAgent(int $id): JsonResponse
+    public function updateDeliveryTierConfig(Request $request, $configId)
     {
-        $agent = User::where('user_type', 'agent')->find($id);
+        $this->authorize('admin');
 
-        if (!$agent) {
-            return response()->json(['error' => 'Agent not found'], 404);
-        }
+        $config = DeliveryTierConfig::findOrFail($configId);
 
-        if ($agent->delivery_agent_application_status !== 'pending') {
-            return response()->json(['error' => 'No pending application found'], 400);
-        }
-
-        $agent->update([
-            'is_delivery_agent' => true,
-            'delivery_agent_application_status' => 'approved',
+        $validator = Validator::make($request->all(), [
+            'tier_name' => 'sometimes|string|max:100',
+            'max_order_amount' => 'sometimes|numeric|min:0',
+            'min_completed_deliveries' => 'sometimes|integer|min:0',
+            'min_security_deposit' => 'sometimes|numeric|min:0',
+            'max_security_deposit' => 'sometimes|numeric|min:0',
+            'description' => 'sometimes|string|max:500',
+            'active' => 'sometimes|boolean',
         ]);
 
-        return response()->json([
-            'message' => 'Delivery agent application approved successfully',
-            'data' => [
-                'id' => (string) $agent->id,
-                'name' => $agent->fullname,
-                'is_delivery_agent' => true,
-                'security_wallet_deposit' => (float) $agent->security_wallet_deposit ?? 0
-            ],
-        ]);
+        if ($validator->fails()) {
+            return JsonResponser::send(true, $validator->errors()->first(), null, 422);
+        }
+
+        $config->update($validator->validated());
+
+        return JsonResponser::send(false, 'Tier configuration updated.', $config, 200);
     }
 
     /**
-     * Reject delivery agent application
+     * Delete tier configuration
      */
-    public function rejectDeliveryAgent(int $id): JsonResponse
+    public function deleteDeliveryTierConfig(Request $request, $configId)
     {
-        $agent = User::where('user_type', 'agent')->find($id);
+        $this->authorize('admin');
 
-        if (!$agent) {
-            return response()->json(['error' => 'Agent not found'], 404);
-        }
+        $config = DeliveryTierConfig::findOrFail($configId);
 
-        if ($agent->delivery_agent_application_status !== 'pending') {
-            return response()->json(['error' => 'No pending application found'], 400);
-        }
+        // Soft delete or mark as inactive
+        $config->update(['active' => false]);
 
-        // Refund security deposit to main wallet
-        $securityDeposit = $agent->security_wallet_deposit;
-
-        $agent->update([
-            'is_delivery_agent' => false,
-            'delivery_agent_application_status' => 'rejected',
-            'security_wallet_deposit' => 0,
-        ]);
-
-        $agent->increment('main_wallet', $securityDeposit);
-
-        return response()->json([
-            'message' => 'Delivery agent application rejected. Security deposit refunded.',
-            'data' => [
-                'id' => (string) $agent->id,
-                'name' => $agent->fullname,
-                'refunded_amount' => (float) $securityDeposit,
-                'wallet_balance' => (float) $agent->fresh()->main_wallet,
-            ],
-        ]);
+        return JsonResponser::send(false, 'Tier configuration deleted.', null, 200);
     }
 }

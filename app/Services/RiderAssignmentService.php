@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Order;
 use App\Models\User;
+use App\Support\DeliveryTier;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -25,36 +26,49 @@ class RiderAssignmentService
         }
 
         $radiusKm = (float) config('services.google_maps.rider_assignment_radius_km', 12);
+        $orderAmount = $order->fulfillmentAmount();
 
-        $riders = User::query()
-            ->where('user_type', 'rider')
+        $agents = User::query()
+            ->where('user_type', 'agent')
+            ->where('is_delivery_agent', true)
             ->where('can_login', true)
             ->whereNotNull('latitude')
             ->whereNotNull('longitude')
-            ->get(['id', 'fullname', 'latitude', 'longitude']);
+            ->get(['id', 'fullname', 'latitude', 'longitude', 'delivery_tier']);
 
-        if ($riders->isEmpty()) {
+        if ($agents->isEmpty()) {
             return null;
         }
 
-        $candidates = $riders
-            ->map(function (User $rider) use ($pickupLat, $pickupLng) {
-                $riderLat = (float) $rider->latitude;
-                $riderLng = (float) $rider->longitude;
+        // Drop agents whose tier can't cover this order's amount before
+        // doing any distance math — no point offering a ₦50k order to a
+        // Tier 1 agent who can't legally accept it.
+        $eligibleAgents = $agents->filter(function (User $agent) use ($orderAmount) {
+            return DeliveryTier::tierCanHandle((int) ($agent->delivery_tier ?? 1), $orderAmount);
+        });
 
-                if (!$this->isValidCoordinates($riderLat, $riderLng)) {
+        if ($eligibleAgents->isEmpty()) {
+            return null;
+        }
+
+        $candidates = $eligibleAgents
+            ->map(function (User $agent) use ($pickupLat, $pickupLng) {
+                $agentLat = (float) $agent->latitude;
+                $agentLng = (float) $agent->longitude;
+
+                if (!$this->isValidCoordinates($agentLat, $agentLng)) {
                     return null;
                 }
 
                 $distanceKm = $this->haversineDistanceKm(
-                    $riderLat,
-                    $riderLng,
+                    $agentLat,
+                    $agentLng,
                     $pickupLat,
                     $pickupLng
                 );
 
                 return [
-                    'rider' => $rider,
+                    'rider' => $agent,
                     'distance_km' => $distanceKm,
                 ];
             })
@@ -75,12 +89,12 @@ class RiderAssignmentService
             $selected = $withinRadius->first();
         }
 
-        /** @var User $rider */
-        $rider = $selected['rider'];
-        $order->accepted_by = $rider->id;
+        /** @var User $agent */
+        $agent = $selected['rider'];
+        $order->accepted_by = $agent->id;
         $order->save();
 
-        return $rider;
+        return $agent;
     }
 
     private function resolvePickupCoordinates(Order $order): array

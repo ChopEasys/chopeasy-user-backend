@@ -338,17 +338,17 @@ class BankAccountController extends Controller
 
         $this->migrateLegacyBankDetails($user->fresh());
 
-        if (in_array($user->user_type, ['vendor', 'rider'], true)) {
-            try {
-                app(AutomaticPayoutService::class)->retryPendingPayouts($user->fresh());
-            } catch (\Throwable $exception) {
-                Log::warning('Failed to retry automatic payouts after bank update.', [
-                    'user_id' => $user->id,
-                    'user_type' => $user->user_type,
-                    'error' => $exception->getMessage(),
-                ]);
-            }
-        }
+        // if (in_array($user->user_type, ['vendor', 'rider'], true)) {
+        //     try {
+        //         app(AutomaticPayoutService::class)->retryPendingPayouts($user->fresh());
+        //     } catch (\Throwable $exception) {
+        //         Log::warning('Failed to retry automatic payouts after bank update.', [
+        //             'user_id' => $user->id,
+        //             'user_type' => $user->user_type,
+        //             'error' => $exception->getMessage(),
+        //         ]);
+        //     }
+        // }
 
         return response()->json([
             'message' => $updating

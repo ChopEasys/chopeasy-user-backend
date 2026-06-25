@@ -9,6 +9,7 @@ use App\Models\AgentCustomerNotificationPref;
 use App\Models\AgentEarning;
 use App\Models\AgentWithdrawal;
 use App\Models\AgentWithdrawalLine;
+use App\Models\Order;
 use App\Models\User;
 use App\Responser\JsonResponser;
 use App\Services\AgentCommissionService;
@@ -18,9 +19,16 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
+use App\Support\DeliveryTier;
 
 class AgentController extends Controller
 {
+    /**
+     * Minimum completed deliveries a Tier 1 agent needs before
+     * they're allowed to request a Tier 2 upgrade.
+     */
+    private const TIER_2_MIN_COMPLETED_DELIVERIES = 20;
+
     public function dashboard(Request $request, AgentCommissionService $agentCommissionService)
     {
         $user = $request->user();
@@ -30,14 +38,14 @@ class AgentController extends Controller
         }
 
         $settings = AgentCommissionSetting::query()->first();
-        if (!$settings) {
-            $settings = AgentCommissionSetting::query()->create([
-                'customer_percent' => 10,
-                'vendor_percent' => 10,
-                'rider_percent' => 10,
-                'max_vendor_rider_payout_commissions' => 5,
-            ]);
-        }
+        // if (!$settings) {
+        //     $settings = AgentCommissionSetting::query()->create([
+        //         'customer_percent' => 10,
+        //         'vendor_percent' => 10,
+        //         'rider_percent' => 10,
+        //         'max_vendor_rider_payout_commissions' => 5,
+        //     ]);
+        // }
 
         $ref = (string) $user->id;
         $recentEarnings = AgentEarning::where('agent_id', $user->id)
@@ -60,6 +68,11 @@ class AgentController extends Controller
                 'email' => $user->email,
                 'phoneno' => $user->phoneno,
                 'user_type' => $user->user_type,
+                'is_delivery_agent' => (bool) $user->is_delivery_agent,
+                'delivery_agent_application_status' => $user->delivery_agent_application_status,
+                'delivery_tier' => (int) ($user->delivery_tier ?? 1),
+                'delivery_tier_name' => $user->delivery_tier_name ?? 'Tier 1',
+                'tier_upgrade_status' => $user->tier_upgrade_status,
             ],
             'wallet_balance' => (float) $user->main_wallet,
             'commission_settings' => [
@@ -79,16 +92,16 @@ class AgentController extends Controller
                     'title' => 'Refer vendors',
                     'description' => 'Earn ' . $settings->vendor_percent . '% of the platform commission on each vendor payout from vendors you referred (up to ' . $settings->max_vendor_rider_payout_commissions . ' payouts per vendor).',
                 ],
-                'rider' => [
-                    'link' => $mkLink(config('app.register_base_rider'), 'rider'),
-                    'title' => 'Refer riders',
-                    'description' => 'Earn ' . $settings->rider_percent . '% of the platform delivery profit (delivery fee minus rider payout) on each completed delivery by riders you referred (up to ' . $settings->max_vendor_rider_payout_commissions . ' payouts per rider).',
+                'agent' => [
+                    'link' => $mkLink(config('app.register_base_rider'), 'agent'),
+                    'title' => 'Refer agents',
+                    'description' => 'Earn ' . $settings->rider_percent . '% of the platform delivery profit (delivery fee minus agent payout) on each completed delivery by agents you referred (up to ' . $settings->max_vendor_rider_payout_commissions . ' payouts per agent).',
                 ],
             ],
             'referral_code' => $ref,
             'referred_customers_count' => User::where('referred_by_agent_id', $user->id)->where('user_type', 'customer')->count(),
             'referred_vendors_count' => User::where('referred_by_agent_id', $user->id)->where('user_type', 'vendor')->count(),
-            'referred_riders_count' => User::where('referred_by_agent_id', $user->id)->where('user_type', 'rider')->count(),
+            'referred_riders_count' => User::where('referred_by_agent_id', $user->id)->where('user_type', 'agent')->count(),
             'bank_details' => $bankDetails ? [
                 'bank_name' => $bankDetails->bank_name,
                 'bank_code' => $bankDetails->bank_code,
@@ -141,10 +154,10 @@ class AgentController extends Controller
         $map = [
             'customer' => 'customer_order',
             'vendor' => 'vendor_payout',
-            'rider' => 'rider_payout',
+            'agent' => 'rider_payout',
         ];
         if (!isset($map[$type])) {
-            return JsonResponser::send(true, 'Invalid type. Use customer, vendor, or rider.', null, 422);
+            return JsonResponser::send(true, 'Invalid type. Use customer, vendor, or agent.', null, 422);
         }
 
         $earningType = $map[$type];
@@ -488,7 +501,6 @@ class AgentController extends Controller
         }
 
         $withdrawal = null;
-        $lines = [];
 
         try {
             DB::transaction(function () use ($user, $bankDetails, $amount, &$withdrawal) {
@@ -520,6 +532,168 @@ class AgentController extends Controller
 
         return JsonResponser::send(false, 'Withdrawal request submitted.', [
             'withdrawal' => $withdrawal,
+            'wallet_balance' => (float) $user->fresh()->main_wallet,
+        ], 200);
+    }
+
+    /**
+     * Apply to become a Tier 1 delivery agent.
+     *
+     * No security deposit required — every agent can apply and start
+     * fulfilling Tier 1 orders (below ₦10,000) once an admin approves
+     * the application.
+     */
+    public function applyToBecomeDeliveryAgent(Request $request)
+    {
+        $user = $request->user();
+
+        if ($user->user_type !== 'agent') {
+            return JsonResponser::send(true, 'Access denied. Agent only.', null, 403);
+        }
+
+        if ($user->is_delivery_agent) {
+            return JsonResponser::send(true, 'You are already a delivery agent.', null, 400);
+        }
+
+        if ($user->delivery_agent_application_status === 'pending') {
+            return JsonResponser::send(true, 'You already have an application in progress.', null, 400);
+        }
+
+        try {
+            $user->update([
+                'delivery_agent_application_status' => 'pending',
+            ]);
+
+            return JsonResponser::send(false, 'Delivery agent application submitted successfully. Wait for admin approval.', [
+                'application_status' => 'pending',
+            ], 200);
+        } catch (\Exception $e) {
+            return JsonResponser::send(true, 'Failed to submit application. Please try again.', null, 500);
+        }
+    }
+
+    /**
+     * Check whether a Tier 1 agent has met the requirements to request
+     * a Tier 2 upgrade, without actually submitting the request.
+     * Lets the frontend show progress (e.g. "14/20 deliveries") and the
+     * security deposit disclaimer before the agent commits to anything.
+     */
+ public function tierUpgradeEligibility(Request $request)
+{
+    $user = $request->user();
+
+    if ($user->user_type !== 'agent') {
+        return JsonResponser::send(true, 'Access denied. Agent only.', null, 403);
+    }
+
+    $currentTier = (int) ($user->delivery_tier ?? 1);
+
+    $completedDeliveries = Order::where('accepted_by', $user->id)
+        ->where('status', 'delivered')
+        ->count();
+
+    return JsonResponser::send(false, 'Eligibility loaded.', [
+        'is_delivery_agent' => (bool) $user->is_delivery_agent,
+        'current_tier' => $currentTier,
+        'current_tier_max_amount' => DeliveryTier::maxAmountForTier($currentTier),
+        'next_tier_max_amount' => DeliveryTier::maxAmountForTier(2),
+        'completed_deliveries' => $completedDeliveries,
+        'required_deliveries' => self::TIER_2_MIN_COMPLETED_DELIVERIES,
+        'eligible_for_tier_2' => $user->is_delivery_agent
+            && $currentTier === 1
+            && $completedDeliveries >= self::TIER_2_MIN_COMPLETED_DELIVERIES,
+        'tier_upgrade_status' => $user->tier_upgrade_status,
+        'security_deposit_min' => 5000,
+        'security_deposit_max' => 20000,
+    ], 200);
+}
+    /**
+     * Tier 1 -> Tier 2 upgrade request.
+     *
+     * Requires at least 20 completed deliveries AND a security deposit
+     * (₦5,000–₦20,000). The deposit is the disclaimer-gated part — the
+     * frontend should show the terms before the agent submits this.
+     */
+    public function requestTierUpgrade(Request $request)
+    {
+        $user = $request->user();
+
+        if ($user->user_type !== 'agent') {
+            return JsonResponser::send(true, 'Access denied. Agent only.', null, 403);
+        }
+
+        if (!$user->is_delivery_agent) {
+            return JsonResponser::send(true, 'You must be an approved delivery agent first.', null, 403);
+        }
+
+        $currentTier = (int) ($user->delivery_tier ?? 1);
+
+        if ($currentTier !== 1) {
+            return JsonResponser::send(true, 'Tier upgrade requests are currently only available from Tier 1 to Tier 2.', null, 422);
+        }
+
+        if ($user->tier_upgrade_status === 'pending') {
+            return JsonResponser::send(true, 'You already have a tier upgrade request pending review.', null, 400);
+        }
+
+        $completedDeliveries = Order::where('accepted_by', $user->id)
+            ->where('status', 'delivered')
+            ->count();
+
+        if ($completedDeliveries < self::TIER_2_MIN_COMPLETED_DELIVERIES) {
+            return JsonResponser::send(true, sprintf(
+                'You need at least %d completed deliveries to request a Tier 2 upgrade. You currently have %d.',
+                self::TIER_2_MIN_COMPLETED_DELIVERIES,
+                $completedDeliveries
+            ), [
+                'completed_deliveries' => $completedDeliveries,
+                'required_deliveries' => self::TIER_2_MIN_COMPLETED_DELIVERIES,
+            ], 422);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'security_deposit_amount' => 'required|numeric|min:5000|max:20000',
+        ]);
+
+        if ($validator->fails()) {
+            return JsonResponser::send(true, $validator->errors()->first(), $validator->errors(), 422);
+        }
+
+        $securityDepositAmount = round((float) $validator->validated()['security_deposit_amount'], 2);
+
+        if ((float) $user->main_wallet < $securityDepositAmount) {
+            return JsonResponser::send(true, 'Insufficient wallet balance to cover the security deposit.', null, 422);
+        }
+
+        try {
+            DB::transaction(function () use ($user, $securityDepositAmount, $completedDeliveries) {
+                $lockedUser = User::where('id', $user->id)->lockForUpdate()->first();
+
+                if ((float) $lockedUser->main_wallet < $securityDepositAmount) {
+                    throw new \RuntimeException('INSUFFICIENT');
+                }
+
+                $lockedUser->decrement('main_wallet', $securityDepositAmount);
+                $lockedUser->update([
+                    'security_wallet_deposit' => $securityDepositAmount,
+                    'tier_upgrade_status' => 'pending',
+                    'tier_upgrade_requested_at' => now(),
+                    'tier_upgrade_completed_deliveries_snapshot' => $completedDeliveries,
+                ]);
+            });
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage() === 'INSUFFICIENT') {
+                return JsonResponser::send(true, 'Insufficient wallet balance to cover the security deposit.', null, 422);
+            }
+
+            throw $e;
+        } catch (\Exception $e) {
+            return JsonResponser::send(true, 'Failed to submit tier upgrade request. Please try again.', null, 500);
+        }
+
+        return JsonResponser::send(false, 'Tier upgrade request submitted. An admin will review your delivery history before approving.', [
+            'tier_upgrade_status' => 'pending',
+            'security_deposit_amount' => $securityDepositAmount,
             'wallet_balance' => (float) $user->fresh()->main_wallet,
         ], 200);
     }
