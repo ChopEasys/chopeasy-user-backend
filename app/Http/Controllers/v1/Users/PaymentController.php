@@ -5,8 +5,12 @@ namespace App\Http\Controllers\v1\Users;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use App\Models\User;
 use App\Models\Transaction;
+use App\Models\AgentWithdrawal;
+use App\Models\VendorPayout;
+use App\Models\RiderPayout;
 
 class PaymentController extends Controller
 {
@@ -109,6 +113,14 @@ class PaymentController extends Controller
 
     /**
      * Step 4: Paystack Webhook Handler
+     *
+     * Handles two unrelated Paystack event families on the same endpoint:
+     *   - charge.success    -> customer deposit into main_wallet (existing flow)
+     *   - transfer.success/
+     *     transfer.failed/
+     *     transfer.reversed -> outbound payouts (agent withdrawals, vendor
+     *                          payouts, rider payouts) finishing async after
+     *                          the /transfer API call only queued them.
      */
     public function webhook(Request $request)
     {
@@ -126,16 +138,76 @@ class PaymentController extends Controller
 
         $input = $request->all();
         $event = $input['event'] ?? null;
+        $data = $input['data'] ?? [];
 
-        if ($event === 'charge.success') {
-            $data = $input['data'] ?? null;
+        // Log::info('Paystack webhook received', ['event' => $event]);
 
-            if ($data && ($data['status'] ?? null) === 'success') {
-                $this->creditDepositFromPaystackData($data);
+        match ($event) {
+            'charge.success' => $this->handleChargeSuccess($data),
+            'transfer.success' => $this->markTransferStatus($data, 'paid'),
+            'transfer.failed' => $this->markTransferStatus($data, 'failed'),
+            'transfer.reversed' => $this->markTransferStatus($data, 'failed'),
+            default => null,
+        };
+
+        return response()->json(['message' => 'Webhook received'], 200);
+    }
+
+    private function handleChargeSuccess(array $data): void
+    {
+        if (($data['status'] ?? null) === 'success') {
+            $this->creditDepositFromPaystackData($data);
+        }
+    }
+
+    /**
+     * Finalize an outbound transfer (agent withdrawal, vendor payout, or
+     * rider payout) once Paystack confirms the real outcome. The synchronous
+     * /transfer response only tells you it was queued ("processing") — this
+     * is what actually flips it to "paid" or "failed".
+     */
+    private function markTransferStatus(array $data, string $status): void
+    {
+        $transferCode = $data['transfer_code'] ?? null;
+        $reference = $data['reference'] ?? null;
+
+        if (!$transferCode && !$reference) {
+            // Log::warning('Paystack transfer webhook had no transfer_code or reference to match.', $data);
+            return;
+        }
+
+        foreach ([AgentWithdrawal::class, VendorPayout::class] as $model) {
+            $record = $transferCode
+                ? $model::where('transfer_code', $transferCode)->first()
+                : null;
+
+            if (!$record && $reference) {
+                $record = $model::where('transfer_reference', $reference)->first();
+            }
+
+            if ($record) {
+                $record->fill([
+                    'status' => $status,
+                    'paid_at' => $status === 'paid' ? now() : $record->paid_at,
+                    'failure_reason' => $status === 'failed'
+                        ? ($data['failures']['reason'] ?? $data['reason'] ?? 'Transfer failed/reversed by Paystack')
+                        : null,
+                ])->save();
+
+                // Log::info('Updated record from Paystack transfer webhook', [
+                //     'model' => $model,
+                //     'id' => $record->id,
+                //     'new_status' => $status,
+                // ]);
+
+                return; // matched — no need to check remaining models
             }
         }
 
-        return response()->json(['message' => 'Webhook received'], 200);
+        // Log::warning('Paystack transfer webhook matched no local record.', [
+        //     'transfer_code' => $transferCode,
+        //     'reference' => $reference,
+        // ]);
     }
 
     /**
