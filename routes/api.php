@@ -62,7 +62,7 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
             Route::post('bank-details', [AgentController::class, 'updateBankDetails']);
             Route::get('banks', [AgentController::class, 'listBanks']);
             Route::post('bank-details/resolve', [AgentController::class, 'resolveBankDetails']);
-            Route::post('withdrawals', [AgentController::class, 'requestWithdrawal']);
+            Route::post('request-withdrawal', [AgentController::class, 'requestWithdrawal']);
             Route::post('apply-delivery-agent', [AgentController::class, 'applyToBecomeDeliveryAgent']);
         });
 
