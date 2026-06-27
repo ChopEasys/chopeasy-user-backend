@@ -41,7 +41,17 @@ class AdminAgentWithdrawalController extends Controller
                 'currency' => 'NGN',
             ]);
 
-        if (!$response->ok() || $response->json('status') !== true) {
+        Log::info('Paystack createTransferRecipient response (agent withdrawal)', [
+            'status' => $response->status(),
+            'body' => $response->body(),
+            'json' => $response->json(),
+        ]);
+
+        // FIX: Paystack returns 201 on create. Laravel's ->ok() only matches
+        // exactly 200, so a successful 201 was being treated as a failure and
+        // thrown immediately — this is why approve() was failing while the
+        // vendor/rider auto-payout flow (already patched) was going through.
+        if (!$response->successful() || $response->json('status') !== true) {
             throw new \RuntimeException($response->json('message') ?? 'Unable to create transfer recipient.');
         }
 
@@ -66,7 +76,16 @@ class AdminAgentWithdrawalController extends Controller
                 'reason' => $reason,
             ]);
 
-        if (!$response->ok() || $response->json('status') !== true) {
+        Log::info('Paystack initiateTransfer response (agent withdrawal)', [
+            'recipient_code' => $recipientCode,
+            'amount' => $amount,
+            'status' => $response->status(),
+            'body' => $response->body(),
+            'json' => $response->json(),
+        ]);
+
+        // FIX: same ->ok() vs ->successful() issue as above.
+        if (!$response->successful() || $response->json('status') !== true) {
             throw new \RuntimeException($response->json('message') ?? 'Unable to initiate transfer.');
         }
 
@@ -75,11 +94,25 @@ class AdminAgentWithdrawalController extends Controller
 
     protected function normalizedTransferStatus(?string $status): string
     {
-        return match (strtolower(trim((string) $status))) {
+        $normalized = strtolower(trim((string) $status));
+
+        return match ($normalized) {
             'success' => 'paid',
             'pending', 'otp', 'received', 'queued', 'processing' => 'processing',
-            default => 'processing',
+            // FIX: a declined/reversed transfer must surface as failed, not
+            // silently sit as "processing" forever.
+            'failed', 'reversed' => 'failed',
+            default => $this->logUnrecognizedTransferStatus($normalized),
         };
+    }
+
+    private function logUnrecognizedTransferStatus(string $normalized): string
+    {
+        Log::warning('Unrecognized Paystack transfer status (agent withdrawal), defaulting to processing.', [
+            'status' => $normalized,
+        ]);
+
+        return 'processing';
     }
 
     /**
