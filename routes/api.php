@@ -142,7 +142,28 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
         Route::get('/admin/dashboard/metrics', [AdminDashboardController::class, 'metrics']);
         Route::get('/admin/dashboard/chart', [AdminDashboardController::class, 'chartData']);
         Route::get('/admin/dashboard/activity', [AdminDashboardController::class, 'recentActivity']);
+ // Get all agents
+    Route::get('/', [AdminAgentController::class, 'getAgents']);
+    
+    // Delivery applications
 
+    Route::post('/admin/agents/applications/{agentId}', [AdminAgentController::class, 'approveDeliveryApplication']);
+    
+    // Tier upgrades
+
+    Route::post('/admin/agents/tier-upgrades/{agentId}', [AdminAgentController::class, 'approveTierUpgrade']);
+
+    // Manual tier update (admin override)
+    Route::put('/admin/agents/{agentId}/tier', [AdminAgentController::class, 'updateAgentTier']);
+
+    // Update delivery agent application status (admin override)
+    Route::put('/admin/agents/{agentId}/delivery-status', [AdminAgentController::class, 'updateDeliveryAgentStatus']);
+
+    // Tier configuration CRUD
+
+    Route::post('/admin/agents/tier-configs', [AdminAgentController::class, 'createDeliveryTierConfig']);
+    Route::put('/admin/agents/tier-configs/{configId}', [AdminAgentController::class, 'updateDeliveryTierConfig']);
+    Route::delete('/admin/agents/tier-configs/{configId}', [AdminAgentController::class, 'deleteDeliveryTierConfig']);
         // Admin Vendors, Products, Agents, Notifications
         Route::get('/admin/vendors', [AdminVendorController::class, 'index']);
         Route::get('/admin/vendors/{id}', [AdminVendorController::class, 'show']);
