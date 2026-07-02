@@ -111,7 +111,7 @@ class AgentCommissionReportService
             'commission_settings' => [
                 'customer_percent' => (float) $settings->customer_percent,
                 'vendor_percent' => (float) $settings->vendor_percent,
-                'rider_percent' => (float) $settings->rider_percent,
+                'agent_percent' => (float) $settings->agent_percent,
                 'max_vendor_rider_payout_commissions' => (int) $settings->max_vendor_rider_payout_commissions,
             ],
             'platform_revenue' => $revenue,
@@ -307,23 +307,23 @@ class AgentCommissionReportService
         }
 
         if ($riderPayoutRow && !empty($riderPayoutRow['rider']['referred_by_agent_id'])) {
-            $riderId = (int) $riderPayoutRow['rider']['id'];
-            $key = 'rider_payout:' . $riderId;
+            $agentId = (int) $riderPayoutRow['rider']['id'];
+            $key = 'agent_payout:' . $agentId;
             if (!in_array($key, $creditedKeys, true)) {
-                $agent = User::find($riderPayoutRow['rider']['referred_by_agent_id']);
+                $uplineAgent = User::find($riderPayoutRow['rider']['referred_by_agent_id']);
                 $base = (float) ($riderPayoutRow['platform_delivery_profit'] ?? 0);
-                $pct = (float) $settings->rider_percent;
+                $pct = (float) $settings->agent_percent;
                 $status = in_array($riderPayoutRow['status'] ?? '', ['paid', 'processing'], true)
-                    ? ($this->vendorRiderCapReached((int) $agent?->id, $riderId, 'rider', (int) $settings->max_vendor_rider_payout_commissions)
+                    ? ($this->vendorRiderCapReached((int) $uplineAgent?->id, $agentId, 'agent', (int) $settings->max_vendor_rider_payout_commissions)
                         ? 'cap_reached'
                         : 'eligible_not_credited')
-                    : 'awaiting_rider_payout';
+                    : 'awaiting_agent_payout';
 
                 if ($base > 0) {
                     $expected[] = $this->expectedRow(
-                        'rider_payout',
-                        $agent,
-                        User::find($riderId),
+                        'agent_payout',
+                        $uplineAgent,
+                        User::find($agentId),
                         'Platform delivery profit',
                         $base,
                         $pct,

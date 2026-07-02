@@ -562,13 +562,10 @@ class AgentController extends Controller
             return JsonResponser::send(true, 'You are already a delivery agent.', null, 400);
         }
 
-        if ($user->delivery_agent_application_status === 'pending') {
-            return JsonResponser::send(true, 'You already have an application in progress.', null, 400);
-        }
-
         try {
             $user->update([
                 'delivery_agent_application_status' => 'pending',
+                'is_delivery_agent'  => true
             ]);
 
             return JsonResponser::send(false, 'Delivery agent application submitted successfully. Wait for admin approval.', [

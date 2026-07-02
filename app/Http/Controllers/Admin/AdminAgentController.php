@@ -225,13 +225,14 @@ class AdminAgentController extends Controller
     }
 
 
-     /**
+/**
      * Get pending delivery agent applications
      */
     public function getDeliveryApplications(Request $request)
     {
-        $applications = User::where('delivery_agent_application_status', 'pending')
+        $applications = User::where('is_delivery_agent', 1)
             ->where('user_type', 'agent')
+            ->where('delivery_agent_application_status', '!=', 'approved')
             ->select('id', 'fullname', 'email', 'delivery_agent_application_status', 'created_at')
             ->orderByDesc('created_at')
             ->get()
@@ -241,14 +242,13 @@ class AdminAgentController extends Controller
                     'agent_id' => $agent->id,
                     'agent_name' => $agent->fullname,
                     'agent_email' => $agent->email,
-                    'status' => 'pending',
+                    'status' => $agent->delivery_agent_application_status,
                     'applied_at' => $agent->created_at->toIso8601String(),
                 ];
             });
- 
+
         return JsonResponser::send(false, 'Applications loaded.', $applications, 200);
     }
- 
     /**
      * Approve or reject delivery agent application
      */

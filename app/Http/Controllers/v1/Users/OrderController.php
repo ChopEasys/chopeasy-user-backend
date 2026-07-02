@@ -957,7 +957,7 @@ class OrderController extends Controller
 
         $orderForCommission = $order->fresh(['user']);
         $agentCommissionService->creditCustomerOrderOnDeliveryConfirm($orderForCommission);
-        $agentCommissionService->creditRiderReferralAfterPayout($orderForCommission, $riderPayout);
+        $agentCommissionService->creditAgentReferralAfterPayout($orderForCommission, $riderPayout);
 
         return response()->json([
             'message' => 'Order confirmed successfully',

@@ -21,7 +21,7 @@ class AgentCommissionService
         return AgentCommissionSetting::query()->create([
             'customer_percent' => 10,
             'vendor_percent' => 10,
-            'rider_percent' => 10,
+            'agent_percent' => 10,
             'max_vendor_rider_payout_commissions' => 5,
         ]);
     }
@@ -141,39 +141,39 @@ class AgentCommissionService
     }
 
     /**
-     * @param  array<string, mixed>|null  $riderPayout
+     * @param  array<string, mixed>|null  $agentPayout
      */
-    public function creditRiderReferralAfterPayout(Order $order, ?array $riderPayout): void
+    public function creditAgentReferralAfterPayout(Order $order, ?array $agentPayout): void
     {
-        if (!$riderPayout) {
+        if (!$agentPayout) {
             return;
         }
 
-        $status = strtolower((string) ($riderPayout['status'] ?? ''));
+        $status = strtolower((string) ($agentPayout['status'] ?? ''));
         if (!in_array($status, ['paid', 'processing'], true)) {
             return;
         }
 
-        $riderId = (int) ($riderPayout['rider_id'] ?? $order->accepted_by ?? 0);
-        if ($riderId <= 0) {
+        $agentId = (int) ($agentPayout['agent_id'] ?? $order->accepted_by ?? 0);
+        if ($agentId <= 0) {
             return;
         }
 
-        $rider = User::find($riderId);
-        if (!$rider || $rider->user_type !== 'rider' || !$rider->referred_by_agent_id) {
-            return;
-        }
-
-        $agentId = (int) $rider->referred_by_agent_id;
         $agent = User::find($agentId);
-        if (!$agent || $agent->user_type !== 'agent') {
+        if (!$agent || $agent->user_type !== 'agent' || !$agent->referred_by_agent_id) {
+            return;
+        }
+
+        $uplineAgentId = (int) $agent->referred_by_agent_id;
+        $uplineAgent = User::find($uplineAgentId);
+        if (!$uplineAgent || $uplineAgent->user_type !== 'agent') {
             return;
         }
 
         if (
             AgentEarning::where('order_id', $order->id)
-                ->where('earning_type', 'rider_payout')
-                ->where('referred_user_id', $riderId)
+                ->where('earning_type', 'agent_payout')
+                ->where('referred_user_id', $agentId)
                 ->exists()
         ) {
             return;
@@ -181,30 +181,30 @@ class AgentCommissionService
 
         $settings = $this->settings();
         $max = (int) $settings->max_vendor_rider_payout_commissions;
-        if (!$this->canTakeVendorRiderCommission($agentId, $riderId, 'rider', $max)) {
+        if (!$this->canTakeVendorRiderCommission($uplineAgentId, $agentId, 'agent', $max)) {
             return;
         }
 
-        $pct = (float) $settings->rider_percent;
-        $base = $this->riderCompanyProfitBase($order, (float) ($riderPayout['amount'] ?? 0));
+        $pct = (float) $settings->agent_percent;
+        $base = $this->agentCompanyProfitBase($order, (float) ($agentPayout['amount'] ?? 0));
         $amount = round($base * ($pct / 100), 2);
         if ($amount <= 0) {
             return;
         }
 
-        DB::transaction(function () use ($agentId, $order, $riderId, $pct, $amount, $base) {
+        DB::transaction(function () use ($uplineAgentId, $order, $agentId, $pct, $amount, $base) {
             AgentEarning::create([
-                'agent_id' => $agentId,
+                'agent_id' => $uplineAgentId,
                 'order_id' => $order->id,
-                'earning_type' => 'rider_payout',
-                'referred_user_id' => $riderId,
+                'earning_type' => 'agent_payout',
+                'referred_user_id' => $agentId,
                 'order_amount' => $base,
                 'commission_percent' => $pct,
                 'amount' => $amount,
                 'status' => 'credited',
             ]);
-            User::where('id', $agentId)->increment('main_wallet', $amount);
-            $this->incrementVendorRiderCounter($agentId, $riderId, 'rider');
+            User::where('id', $uplineAgentId)->increment('main_wallet', $amount);
+            $this->incrementVendorRiderCounter($uplineAgentId, $agentId, 'agent');
         });
     }
 
@@ -215,7 +215,7 @@ class AgentCommissionService
             'commission_base_label' => match ($earning->earning_type) {
                 'customer_order' => 'Markup + service fee',
                 'vendor_payout' => 'Platform vendor commission',
-                'rider_payout' => 'Platform delivery profit',
+                'agent_payout' => 'Platform delivery profit',
                 default => 'Commission base',
             },
         ];
@@ -283,7 +283,12 @@ class AgentCommissionService
 
     public function getRiderCommissionBase(Order $order, ?float $riderPayoutAmount = null): float
     {
-        return $this->riderCompanyProfitBase($order, $riderPayoutAmount);
+        return $this->agentCompanyProfitBase($order, $riderPayoutAmount);
+    }
+
+    public function getAgentCommissionBase(Order $order, ?float $agentPayoutAmount = null): float
+    {
+        return $this->agentCompanyProfitBase($order, $agentPayoutAmount);
     }
 
     protected function canTakeVendorRiderCommission(int $agentId, int $referredUserId, string $kind, int $max): bool
@@ -363,18 +368,18 @@ class AgentCommissionService
         return round(max($platformTake, 0), 2);
     }
 
-    protected function riderCompanyProfitBase(Order $order, ?float $riderPayoutAmount = null): float
+    protected function agentCompanyProfitBase(Order $order, ?float $agentPayoutAmount = null): float
     {
         $breakdown = $this->pricingBreakdown($order);
         $payoutBreakdown = $this->payoutBreakdown($order);
 
         $deliveryFeeTotal = (float) ($order->delivery_fee_total
             ?? ($breakdown['delivery_fee_total'] ?? $breakdown['total_charge'] ?? 0));
-        $riderPayout = $riderPayoutAmount !== null && $riderPayoutAmount > 0
-            ? $riderPayoutAmount
+        $agentPayout = $agentPayoutAmount !== null && $agentPayoutAmount > 0
+            ? $agentPayoutAmount
             : (float) ($payoutBreakdown['rider_payout'] ?? $order->rider_payout ?? 0);
 
-        return round(max($deliveryFeeTotal - $riderPayout, 0), 2);
+        return round(max($deliveryFeeTotal - $agentPayout, 0), 2);
     }
 
     protected function recordedCommissionBaseAmount(AgentEarning $earning): float
