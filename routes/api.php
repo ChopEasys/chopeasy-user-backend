@@ -56,6 +56,7 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
             Route::get('withdrawal-prefix-sums', [AgentController::class, 'withdrawalPrefixSums']);
             Route::get('transactions', [AgentController::class, 'transactions']);
             Route::get('referred-customers', [AgentController::class, 'referredCustomers']);
+            Route::get('referred-agents', [AgentController::class, 'referredAgents']);
             Route::put('customer-notification-prefs', [AgentController::class, 'updateCustomerNotificationPrefs']);
             Route::post('customer-reminders', [AgentController::class, 'sendCustomerReminder']);
             Route::put('bank-details', [AgentController::class, 'updateBankDetails']);

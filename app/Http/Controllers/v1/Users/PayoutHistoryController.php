@@ -79,7 +79,7 @@ class PayoutHistoryController extends Controller
     {
         $user = $request->user();
 
-        if (!$user || $user->user_type !== 'rider') {
+        if (!$user || !in_array($user->user_type, ['rider', 'agent'], true)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

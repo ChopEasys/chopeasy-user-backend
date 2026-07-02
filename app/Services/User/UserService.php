@@ -122,7 +122,7 @@ class UserService
 
         $referralCode = $data['referral_code'] ?? null;
         unset($data['referral_code']);
-        if ($referralCode && in_array(($data['user_type'] ?? null), ['customer', 'vendor', 'rider'], true)) {
+        if ($referralCode && in_array(($data['user_type'] ?? null), ['customer', 'vendor', 'rider', 'agent'], true)) {
             $agent = User::where('id', $referralCode)->where('user_type', 'agent')->first();
             if ($agent) {
                 $data['referred_by_agent_id'] = $agent->id;

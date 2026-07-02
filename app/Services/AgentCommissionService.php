@@ -23,6 +23,7 @@ class AgentCommissionService
             'vendor_percent' => 10,
             'agent_percent' => 10,
             'max_vendor_rider_payout_commissions' => 5,
+            'downline_percent' => 15,
         ]);
     }
 
@@ -52,8 +53,8 @@ class AgentCommissionService
             return;
         }
 
-        DB::transaction(function () use ($agentId, $order, $base, $pct, $amount, $user) {
-            AgentEarning::create([
+        $earning = DB::transaction(function () use ($agentId, $order, $base, $pct, $amount, $user) {
+            $earning = AgentEarning::create([
                 'agent_id' => $agentId,
                 'order_id' => $order->id,
                 'earning_type' => 'customer_order',
@@ -64,7 +65,10 @@ class AgentCommissionService
                 'status' => 'credited',
             ]);
             User::where('id', $agentId)->increment('main_wallet', $amount);
+            return $earning;
         });
+
+        $this->creditUplineFromDownlineEarning($agent, $earning);
     }
 
     /**
@@ -123,8 +127,8 @@ class AgentCommissionService
                 continue;
             }
 
-            DB::transaction(function () use ($agentId, $order, $vendorId, $pct, $amount, $base) {
-                AgentEarning::create([
+            $earning = DB::transaction(function () use ($agentId, $order, $vendorId, $pct, $amount, $base) {
+                $earning = AgentEarning::create([
                     'agent_id' => $agentId,
                     'order_id' => $order->id,
                     'earning_type' => 'vendor_payout',
@@ -136,7 +140,10 @@ class AgentCommissionService
                 ]);
                 User::where('id', $agentId)->increment('main_wallet', $amount);
                 $this->incrementVendorRiderCounter($agentId, $vendorId, 'vendor');
+                return $earning;
             });
+
+            $this->creditUplineFromDownlineEarning($agent, $earning);
         }
     }
 
@@ -192,8 +199,8 @@ class AgentCommissionService
             return;
         }
 
-        DB::transaction(function () use ($uplineAgentId, $order, $agentId, $pct, $amount, $base) {
-            AgentEarning::create([
+        $earning = DB::transaction(function () use ($uplineAgentId, $order, $agentId, $pct, $amount, $base) {
+            $earning = AgentEarning::create([
                 'agent_id' => $uplineAgentId,
                 'order_id' => $order->id,
                 'earning_type' => 'agent_payout',
@@ -205,6 +212,58 @@ class AgentCommissionService
             ]);
             User::where('id', $uplineAgentId)->increment('main_wallet', $amount);
             $this->incrementVendorRiderCounter($uplineAgentId, $agentId, 'agent');
+            return $earning;
+        });
+
+        $this->creditUplineFromDownlineEarning($uplineAgent, $earning);
+    }
+
+    /**
+     * Credit the upline agent with a percentage of the downline agent's earning.
+     *
+     * @param  User          $agent   The agent who just earned a commission (potential downline)
+     * @param  AgentEarning  $earning The earning record just created for the downline agent
+     */
+    public function creditUplineFromDownlineEarning(User $agent, AgentEarning $earning): void
+    {
+        if (!$agent->referred_by_agent_id) {
+            return;
+        }
+
+        $uplineId = (int) $agent->referred_by_agent_id;
+        $upline = User::find($uplineId);
+        if (!$upline || $upline->user_type !== 'agent') {
+            return;
+        }
+
+        $settings = $this->settings();
+        $downlinePercent = (float) $settings->downline_percent;
+        if ($downlinePercent <= 0) {
+            return;
+        }
+
+        $earningAmount = (float) $earning->amount;
+        if ($earningAmount <= 0) {
+            return;
+        }
+
+        $uplineShare = round($earningAmount * $downlinePercent / 100, 2);
+        if ($uplineShare <= 0) {
+            return;
+        }
+
+        DB::transaction(function () use ($uplineId, $earning, $agent, $downlinePercent, $uplineShare) {
+            AgentEarning::create([
+                'agent_id' => $uplineId,
+                'order_id' => $earning->order_id,
+                'earning_type' => 'agent_downline',
+                'referred_user_id' => $agent->id,
+                'order_amount' => $earning->amount,
+                'commission_percent' => $downlinePercent,
+                'amount' => $uplineShare,
+                'status' => 'credited',
+            ]);
+            User::where('id', $uplineId)->increment('main_wallet', $uplineShare);
         });
     }
 
@@ -216,6 +275,7 @@ class AgentCommissionService
                 'customer_order' => 'Markup + service fee',
                 'vendor_payout' => 'Platform vendor commission',
                 'agent_payout' => 'Platform delivery profit',
+                'agent_downline' => 'Downline agent earning',
                 default => 'Commission base',
             },
         ];

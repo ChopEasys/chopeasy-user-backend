@@ -100,9 +100,9 @@ class AgentController extends Controller
                     'description' => 'Earn ' . $settings->vendor_percent . '% of the platform commission on each vendor payout from vendors you referred (up to ' . $settings->max_vendor_rider_payout_commissions . ' payouts per vendor).',
                 ],
                 'agent' => [
-                    'link' => $mkLink(config('app.register_base_rider'), 'agent'),
+                    'link' => $mkLink(config('app.register_base_agent'), 'agent'),
                     'title' => 'Refer agents',
-                    'description' => 'Earn ' . $settings->rider_percent . '% of the platform delivery profit (delivery fee minus agent payout) on each completed delivery by agents you referred (up to ' . $settings->max_vendor_rider_payout_commissions . ' payouts per agent).',
+                    'description' => 'Earn ' . $settings->downline_percent . '% of commissions earned by agents you referred.',
                 ],
             ],
             'referral_code' => $ref,
@@ -161,7 +161,7 @@ class AgentController extends Controller
         $map = [
             'customer' => 'customer_order',
             'vendor' => 'vendor_payout',
-            'agent' => 'rider_payout',
+            'agent' => 'agent_downline',
         ];
         if (!isset($map[$type])) {
             return JsonResponser::send(true, 'Invalid type. Use customer, vendor, or agent.', null, 422);
@@ -200,6 +200,60 @@ class AgentController extends Controller
                 'last_page' => $paginator->lastPage(),
                 'per_page' => $paginator->perPage(),
                 'total' => $paginator->total(),
+            ],
+        ], 200);
+    }
+
+    public function referredAgents(Request $request)
+    {
+        $agent = $request->user();
+        if ($agent->user_type !== 'agent') {
+            return JsonResponser::send(true, 'Access denied. Agent only.', null, 403);
+        }
+
+        $perPage = min(50, max(5, (int) $request->query('per_page', 20)));
+
+        // Get downline agents with aggregated earnings
+        $downlineAgents = User::where('referred_by_agent_id', $agent->id)
+            ->where('user_type', 'agent')
+            ->orderByDesc('created_at')
+            ->paginate($perPage, ['id', 'fullname', 'email', 'phoneno', 'created_at']);
+
+        // Get aggregated upline earnings per downline agent
+        $downlineIds = $downlineAgents->pluck('id')->toArray();
+
+        $earningsData = [];
+        if (!empty($downlineIds)) {
+            $earningsData = AgentEarning::where('agent_id', $agent->id)
+                ->where('earning_type', 'agent_downline')
+                ->whereIn('referred_user_id', $downlineIds)
+                ->groupBy('referred_user_id')
+                ->selectRaw('referred_user_id, SUM(amount) as total_earned, COUNT(*) as earnings_count')
+                ->get()
+                ->keyBy('referred_user_id');
+        }
+
+        $items = $downlineAgents->getCollection()->map(function ($downline) use ($earningsData) {
+            $earning = $earningsData->get($downline->id);
+
+            return [
+                'id' => $downline->id,
+                'fullname' => $downline->fullname,
+                'email' => $downline->email,
+                'phoneno' => $downline->phoneno,
+                'joined_at' => $downline->created_at->toIso8601String(),
+                'total_earned_from_downline' => $earning ? (float) $earning->total_earned : 0.00,
+                'earnings_count' => $earning ? (int) $earning->earnings_count : 0,
+            ];
+        });
+
+        return JsonResponser::send(false, 'Referred agents loaded.', [
+            'agents' => $items,
+            'pagination' => [
+                'current_page' => $downlineAgents->currentPage(),
+                'last_page' => $downlineAgents->lastPage(),
+                'per_page' => $downlineAgents->perPage(),
+                'total' => $downlineAgents->total(),
             ],
         ], 200);
     }

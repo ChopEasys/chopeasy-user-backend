@@ -56,7 +56,8 @@ return [
     'frontend_url' => env('FRONTEND_URL', 'http://localhost:5173'),
     'register_base_customer' => env('REGISTER_BASE_CUSTOMER', env('FRONTEND_URL', 'http://localhost:5173')),
     'register_base_vendor' => env('REGISTER_BASE_VENDOR', env('FRONTEND_URL', 'http://localhost:5173')),
-    'register_base_rider' => env('REGISTER_BASE_RIDER', env('AGENT_FRONTEND_URL', 'http://localhost:5173')),
+    'register_base_rider' => env('REGISTER_BASE_RIDER', env('FRONTEND_URL', 'http://localhost:5173')),
+    'register_base_agent' => env('REGISTER_BASE_AGENT', env('AGENT_FRONTEND_URL', 'http://localhost:5173')),
 
     /*
     |--------------------------------------------------------------------------

@@ -11,6 +11,7 @@ class AgentCommissionSetting extends Model
         'vendor_percent',
         'agent_percent',
         'max_vendor_rider_payout_commissions',
+        'downline_percent',
     ];
 
     protected $casts = [
@@ -18,5 +19,6 @@ class AgentCommissionSetting extends Model
         'vendor_percent' => 'decimal:2',
         'agent_percent' => 'decimal:2',
         'max_vendor_rider_payout_commissions' => 'integer',
+        'downline_percent' => 'decimal:2',
     ];
 }
