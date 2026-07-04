@@ -17,7 +17,8 @@ class AdminAgentCommissionController extends Controller
             $s = AgentCommissionSetting::query()->create([
                 'customer_percent' => 10,
                 'vendor_percent' => 10,
-                'rider_percent' => 10,
+                'agent_percent' => 10,
+                'downline_percent' => 15,
                 'max_vendor_rider_payout_commissions' => 5,
             ]);
         }
@@ -26,7 +27,7 @@ class AdminAgentCommissionController extends Controller
             'data' => [
                 'customer_percent' => (float) $s->customer_percent,
                 'vendor_percent' => (float) $s->vendor_percent,
-                'rider_percent' => (float) $s->rider_percent,
+                'downline_percent' => (float) ($s->downline_percent ?? 15),
                 'max_vendor_rider_payout_commissions' => (int) $s->max_vendor_rider_payout_commissions,
             ],
         ]);
@@ -37,7 +38,7 @@ class AdminAgentCommissionController extends Controller
         $validator = Validator::make($request->all(), [
             'customer_percent' => 'required|numeric|min:0|max:100',
             'vendor_percent' => 'required|numeric|min:0|max:100',
-            'rider_percent' => 'required|numeric|min:0|max:100',
+            'downline_percent' => 'required|numeric|min:0|max:100',
             'max_vendor_rider_payout_commissions' => 'required|integer|min:1|max:50',
         ]);
 
@@ -58,7 +59,7 @@ class AdminAgentCommissionController extends Controller
             'data' => [
                 'customer_percent' => (float) $s->customer_percent,
                 'vendor_percent' => (float) $s->vendor_percent,
-                'rider_percent' => (float) $s->rider_percent,
+                'downline_percent' => (float) $s->downline_percent,
                 'max_vendor_rider_payout_commissions' => (int) $s->max_vendor_rider_payout_commissions,
             ],
         ]);

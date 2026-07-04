@@ -443,6 +443,18 @@ class AuthController extends Controller
                 );
             }
             break;
+
+        case 'agent':
+            if ($request->filled('storeAddress')) {
+                $user->address = $request->storeAddress;
+            }
+            if ($request->filled('latitude')) {
+                $user->latitude = $request->latitude;
+            }
+            if ($request->filled('longitude')) {
+                $user->longitude = $request->longitude;
+            }
+            break;
     }
 
     $user->save();

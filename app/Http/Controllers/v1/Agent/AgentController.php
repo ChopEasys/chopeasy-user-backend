@@ -74,6 +74,9 @@ class AgentController extends Controller
                 'fullname' => $user->fullname,
                 'email' => $user->email,
                 'phoneno' => $user->phoneno,
+                'address' => $user->address,
+                'latitude' => $user->latitude,
+                'longitude' => $user->longitude,
                 'user_type' => $user->user_type,
                 'is_delivery_agent' => (bool) $user->is_delivery_agent,
                 'delivery_agent_application_status' => $user->delivery_agent_application_status,
@@ -298,6 +301,84 @@ class AgentController extends Controller
         ], 200);
     }
 
+    public function referredVendors(Request $request)
+    {
+        $agent = $request->user();
+        if ($agent->user_type !== 'agent') {
+            return JsonResponser::send(true, 'Access denied. Agent only.', null, 403);
+        }
+
+        $vendors = User::where('referred_by_agent_id', $agent->id)
+            ->where('user_type', 'vendor')
+            ->orderByDesc('created_at')
+            ->get(['id', 'fullname', 'store_name', 'email', 'phoneno', 'last_login', 'is_verified', 'created_at']);
+
+        $rows = $vendors->map(function ($v) {
+            $hasProducts = \App\Models\VendorProduct::where('vendor_id', $v->id)->exists();
+            return [
+                'id' => $v->id,
+                'fullname' => $v->fullname,
+                'store_name' => $v->store_name,
+                'email' => $v->email,
+                'phoneno' => $v->phoneno,
+                'is_verified' => (bool) $v->is_verified,
+                'has_products' => $hasProducts,
+                'last_login' => $v->last_login ? Carbon::parse($v->last_login)->toIso8601String() : null,
+                'created_at' => $v->created_at ? $v->created_at->toIso8601String() : null,
+            ];
+        });
+
+        return JsonResponser::send(false, 'Referred vendors loaded.', [
+            'vendors' => $rows,
+        ], 200);
+    }
+
+    public function sendVendorReminder(Request $request)
+    {
+        $agent = $request->user();
+        if ($agent->user_type !== 'agent') {
+            return JsonResponser::send(true, 'Access denied. Agent only.', null, 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'vendor_user_id' => 'required|integer|exists:users,id',
+            'reason' => 'required|in:stock_up,update_prices',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'error' => true,
+                'message' => $validator->errors()->first(),
+                'data' => null,
+            ], 422);
+        }
+
+        $vendorId = (int) $validator->validated()['vendor_user_id'];
+        $vendor = User::where('id', $vendorId)->where('referred_by_agent_id', $agent->id)->where('user_type', 'vendor')->first();
+        if (!$vendor || !$vendor->email) {
+            return JsonResponser::send(true, 'Vendor not found or has no email.', null, 422);
+        }
+
+        $reason = $validator->validated()['reason'];
+        $subject = $reason === 'stock_up'
+            ? 'Time to restock your ChopEasy store'
+            : 'Update your prices on ChopEasy';
+
+        $body = $reason === 'stock_up'
+            ? "Hi {$vendor->fullname},\n\nYour ChopEasy agent {$agent->fullname} is reminding you to check and restock your store inventory. Customers are looking for products — make sure your items are available!\n\n— ChopEasy"
+            : "Hi {$vendor->fullname},\n\nYour ChopEasy agent {$agent->fullname} is reminding you to review and update your product prices to stay competitive and attract more customers.\n\n— ChopEasy";
+
+        try {
+            \Illuminate\Support\Facades\Mail::raw($body, function ($message) use ($vendor, $subject) {
+                $message->to($vendor->email)->subject($subject);
+            });
+        } catch (\Throwable $e) {
+            return JsonResponser::send(true, 'Could not send email: ' . $e->getMessage(), null, 500);
+        }
+
+        return JsonResponser::send(false, 'Reminder sent to vendor.', null, 200);
+    }
+
     public function updateCustomerNotificationPrefs(Request $request)
     {
         $agent = $request->user();
@@ -370,14 +451,7 @@ class AgentController extends Controller
             return JsonResponser::send(true, 'Customer not found or has no email.', null, 422);
         }
 
-        $pref = AgentCustomerNotificationPref::where('agent_id', $agent->id)->where('customer_user_id', $customerId)->first();
         $reason = $validator->validated()['reason'];
-        if ($reason === 'inactive' && !($pref?->notify_inactive)) {
-            return JsonResponser::send(true, 'Enable “notify inactive” for this customer first.', null, 422);
-        }
-        if ($reason === 'incomplete_onboarding' && !($pref?->notify_incomplete_onboarding)) {
-            return JsonResponser::send(true, 'Enable “notify incomplete onboarding” for this customer first.', null, 422);
-        }
 
         $subject = $reason === 'inactive'
             ? 'We miss you on ChopEasy'

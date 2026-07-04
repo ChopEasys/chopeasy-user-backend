@@ -31,6 +31,7 @@ use App\Http\Controllers\Admin\AdminAgentController;
 use App\Http\Controllers\Admin\AdminAgentWithdrawalController;
 use App\Http\Controllers\Admin\AdminAgentCommissionController;
 use App\Http\Controllers\Admin\AdminAgentCommissionReportController;
+use App\Http\Controllers\Admin\AdminRevenueController;
 use App\Http\Controllers\Admin\AdminNotificationController;
 use App\Http\Controllers\Admin\SlideController;
 use Illuminate\Support\Facades\Route;
@@ -57,8 +58,10 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
             Route::get('transactions', [AgentController::class, 'transactions']);
             Route::get('referred-customers', [AgentController::class, 'referredCustomers']);
             Route::get('referred-agents', [AgentController::class, 'referredAgents']);
+            Route::get('referred-vendors', [AgentController::class, 'referredVendors']);
             Route::put('customer-notification-prefs', [AgentController::class, 'updateCustomerNotificationPrefs']);
             Route::post('customer-reminders', [AgentController::class, 'sendCustomerReminder']);
+            Route::post('vendor-reminders', [AgentController::class, 'sendVendorReminder']);
             Route::put('bank-details', [AgentController::class, 'updateBankDetails']);
             Route::post('bank-details', [AgentController::class, 'updateBankDetails']);
             Route::get('banks', [AgentController::class, 'listBanks']);
@@ -184,6 +187,8 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
         Route::put('/admin/agent-commission-settings', [AdminAgentCommissionController::class, 'update']);
         Route::get('/admin/agent-commission-report', [AdminAgentCommissionReportController::class, 'index']);
         Route::get('/admin/agent-commission-report/orders/{orderId}', [AdminAgentCommissionReportController::class, 'show']);
+        Route::get('/admin/revenue', [AdminRevenueController::class, 'index']);
+        Route::get('/admin/revenue/{orderId}', [AdminRevenueController::class, 'show']);
         Route::get('/admin/notifications', [AdminNotificationController::class, 'index']);
 
         // Admin Pricing Management
