@@ -329,11 +329,14 @@ class VendorProductController extends Controller
                 'vendor_profiles.logo',
             ]);
 
-        // Search by vendor name or store name
+        // Search by vendor name, store name, or product name
         if ($search) {
             $vendors->where(function ($q) use ($search) {
                 $q->where('users.fullname', 'like', "%{$search}%")
-                  ->orWhere('users.store_name', 'like', "%{$search}%");
+                  ->orWhere('users.store_name', 'like', "%{$search}%")
+                  ->orWhereHas('vendorProducts', function ($pq) use ($search) {
+                      $pq->where('name', 'like', "%{$search}%");
+                  });
             });
         }
 

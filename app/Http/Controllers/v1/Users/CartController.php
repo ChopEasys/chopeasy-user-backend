@@ -379,6 +379,30 @@ class CartController extends Controller
             $cartItem->variant_snapshot = $variantSnapshot;
             $cartItem->save();
         } else {
+            // Check if same product_id + product_variant_id already exists for this user (from a different vendor)
+            $existingByProduct = Cart::where(function ($query) use ($userId, $sessionId) {
+                if ($userId) {
+                    $query->where('user_id', $userId);
+                } else {
+                    $query->where('session_id', $sessionId);
+                }
+            })
+                ->where('product_id', $product['id'])
+                ->where(function ($q) use ($productVariantId) {
+                    if ($productVariantId) {
+                        $q->where('product_variant_id', $productVariantId);
+                    } else {
+                        $q->whereNull('product_variant_id');
+                    }
+                })
+                ->first();
+
+            if ($existingByProduct) {
+                return $this->buildResponse([
+                    'error' => 'Item already selected in your cart from another store.',
+                ], 422, $cookie);
+            }
+
             $cartItem = Cart::create([
                 'user_id' => $userId,
                 'session_id' => $sessionId,
