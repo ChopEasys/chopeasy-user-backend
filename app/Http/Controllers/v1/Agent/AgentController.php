@@ -219,6 +219,7 @@ class AgentController extends Controller
         // Get downline agents with aggregated earnings
         $downlineAgents = User::where('referred_by_agent_id', $agent->id)
             ->where('user_type', 'agent')
+            ->where('id', '!=', $agent->id)
             ->orderByDesc('created_at')
             ->paginate($perPage, ['id', 'fullname', 'email', 'phoneno', 'created_at']);
 
