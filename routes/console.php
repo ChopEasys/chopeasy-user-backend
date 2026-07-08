@@ -9,3 +9,4 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('orders:process-recurring')->hourly();
+Schedule::command('push:deduction-reminders')->everyMinute();

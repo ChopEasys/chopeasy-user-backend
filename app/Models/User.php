@@ -154,6 +154,11 @@ public function vendorPayouts()
     return $this->hasMany(VendorPayout::class, 'vendor_id');
 }
 
+public function pushSubscriptions()
+{
+    return $this->hasMany(PushSubscription::class);
+}
+
 public function riderPayouts()
 {
     return $this->hasMany(RiderPayout::class, 'rider_id');

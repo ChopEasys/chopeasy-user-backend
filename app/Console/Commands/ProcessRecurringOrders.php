@@ -2,9 +2,11 @@
 
 namespace App\Console\Commands;
 
+use App\Constants\PushNotificationType;
 use App\Models\Order;
 use App\Models\Transaction;
 use App\Notifications\InsufficientWalletBalanceNotification;
+use App\Services\PushDispatchService;
 use App\Services\VendorOrderPayoutNotifier;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -134,6 +136,30 @@ class ProcessRecurringOrders extends Command
     
                             $this->warn(
                                 "Vendor payout notification failed for order #{$order->id}: "
+                                . $e->getMessage()
+                            );
+                        }
+
+                        // Send savings plan completion push notification to the customer
+                        try {
+                            $totalSaved = (float) $order->total_amount;
+
+                            app(PushDispatchService::class)->dispatch(
+                                $user->id,
+                                PushNotificationType::SAVINGS_COMPLETED,
+                                [
+                                    'title' => 'Savings Plan Completed! 🎉',
+                                    'body' => "Your savings plan '{$order->order_number}' is now complete! Total saved: ₦" . number_format($totalSaved, 2),
+                                    'url' => "/savings/{$order->id}",
+                                    'type' => PushNotificationType::SAVINGS_COMPLETED,
+                                    'plan_name' => $order->order_number,
+                                    'total_amount' => number_format($totalSaved, 2),
+                                    'order_number' => $order->order_number,
+                                ]
+                            );
+                        } catch (\Throwable $e) {
+                            $this->warn(
+                                "Savings completion notification failed for order #{$order->id}: "
                                 . $e->getMessage()
                             );
                         }

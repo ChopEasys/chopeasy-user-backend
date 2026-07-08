@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Constants\PushNotificationType;
 use App\Models\Order;
+use App\Models\PushSubscription;
 use App\Models\User;
 use App\Support\DeliveryTier;
 use Illuminate\Support\Facades\Http;
@@ -95,6 +97,138 @@ class RiderAssignmentService
         $order->save();
 
         return $agent;
+    }
+
+    /**
+     * Notify all eligible delivery agents that a new delivery is available.
+     *
+     * Eligible agents must satisfy ALL criteria:
+     * - Within the configured assignment radius of the pickup location
+     * - Delivery tier permits the order's fulfillment amount
+     * - Have at least one active push subscription
+     */
+    public function notifyEligibleAgents(Order $order): void
+    {
+        if (!$order->isPaidForFulfillment()) {
+            return;
+        }
+
+        [$pickupLat, $pickupLng] = $this->resolvePickupCoordinates($order);
+        if (is_null($pickupLat) || is_null($pickupLng) || !$this->isValidCoordinates($pickupLat, $pickupLng)) {
+            return;
+        }
+
+        $radiusKm = (float) config('services.google_maps.rider_assignment_radius_km', 12);
+        $orderAmount = $order->fulfillmentAmount();
+
+        // Get delivery agents with active push subscriptions
+        $agentIdsWithSubscriptions = PushSubscription::query()
+            ->whereHas('user', function ($q) {
+                $q->where('user_type', 'agent')
+                    ->where('is_delivery_agent', true)
+                    ->where('can_login', true)
+                    ->whereNotNull('latitude')
+                    ->whereNotNull('longitude');
+            })
+            ->where(function ($q) {
+                $q->whereNull('expires_at')
+                    ->orWhere('expires_at', '>', now());
+            })
+            ->pluck('user_id')
+            ->unique();
+
+        if ($agentIdsWithSubscriptions->isEmpty()) {
+            return;
+        }
+
+        $agents = User::query()
+            ->whereIn('id', $agentIdsWithSubscriptions)
+            ->where('user_type', 'agent')
+            ->where('is_delivery_agent', true)
+            ->where('can_login', true)
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->get(['id', 'fullname', 'latitude', 'longitude', 'delivery_tier']);
+
+        if ($agents->isEmpty()) {
+            return;
+        }
+
+        // Filter by tier eligibility
+        $eligibleAgents = $agents->filter(function (User $agent) use ($orderAmount) {
+            return DeliveryTier::tierCanHandle((int) ($agent->delivery_tier ?? 1), $orderAmount);
+        });
+
+        if ($eligibleAgents->isEmpty()) {
+            return;
+        }
+
+        // Filter by distance (within assignment radius)
+        $withinRadius = $eligibleAgents->filter(function (User $agent) use ($pickupLat, $pickupLng, $radiusKm) {
+            $agentLat = (float) $agent->latitude;
+            $agentLng = (float) $agent->longitude;
+
+            if (!$this->isValidCoordinates($agentLat, $agentLng)) {
+                return false;
+            }
+
+            $distanceKm = $this->haversineDistanceKm($agentLat, $agentLng, $pickupLat, $pickupLng);
+            return $distanceKm <= $radiusKm;
+        });
+
+        if ($withinRadius->isEmpty()) {
+            return;
+        }
+
+        // Resolve pickup address for the notification payload
+        $pickupAddress = $this->resolvePickupAddress($order);
+
+        $pushService = app(PushDispatchService::class);
+
+        foreach ($withinRadius as $agent) {
+            $agentLat = (float) $agent->latitude;
+            $agentLng = (float) $agent->longitude;
+            $distanceKm = $this->haversineDistanceKm($agentLat, $agentLng, $pickupLat, $pickupLng);
+
+            $payload = [
+                'title' => 'New Delivery Available',
+                'body' => 'A new delivery is available near you (' . round($distanceKm, 1) . ' km away)',
+                'type' => PushNotificationType::DELIVERY_AVAILABLE,
+                'url' => '/available-pickups',
+                'data' => [
+                    'order_id' => $order->id,
+                    'pickup_address' => $pickupAddress,
+                    'estimated_distance_km' => round($distanceKm, 1),
+                ],
+            ];
+
+            try {
+                $pushService->dispatch($agent->id, PushNotificationType::DELIVERY_AVAILABLE, $payload);
+            } catch (\Throwable $e) {
+                Log::warning('Failed to dispatch delivery available notification', [
+                    'agent_id' => $agent->id,
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Resolve the pickup address for an order (from vendor or order fields).
+     */
+    private function resolvePickupAddress(Order $order): ?string
+    {
+        $order->loadMissing('vendorOrders.vendor');
+
+        foreach ($order->vendorOrders as $vendorOrder) {
+            $vendor = $vendorOrder->vendor;
+            if ($vendor && $vendor->address) {
+                return $vendor->address;
+            }
+        }
+
+        return $order->delivery_address;
     }
 
     private function resolvePickupCoordinates(Order $order): array

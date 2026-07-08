@@ -18,6 +18,7 @@ use App\Http\Controllers\v1\Users\WishlistController;
 use App\Http\Controllers\v1\Users\PostalCodeController;
 use App\Http\Controllers\v1\Users\TopRatedController;
 use App\Http\Controllers\v1\Users\NotificationController;
+use App\Http\Controllers\v1\Users\PushSubscriptionController;
 use App\Http\Controllers\v1\Users\BankAccountController;
 use App\Http\Controllers\v1\Orders\OrderPricingController;
 use App\Http\Controllers\v1\Agent\AgentController;
@@ -70,6 +71,11 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
             Route::post('apply-delivery-agent', [AgentController::class, 'applyToBecomeDeliveryAgent']);
         });
 
+        Route::prefix('push')->group(function () {
+            Route::post('/subscribe', [PushSubscriptionController::class, 'subscribe']);
+            Route::delete('/unsubscribe', [PushSubscriptionController::class, 'unsubscribe']);
+        });
+
         Route::prefix('account')->group(function () {
             Route::post('/shipping-address', [AccountController::class, 'addShippingAddress']);
             Route::get('/all/shipping-address', [AccountController::class, 'listShippingAddresses']);
@@ -117,6 +123,7 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
             Route::get('', [OrderController::class, 'getUserOrders']);
             Route::get('/{id}', [OrderController::class, 'getOrderDetails']);
             Route::post('/{id}/reorder', [OrderController::class, 'reorder']);
+            Route::post('/{id}/initiate-delivery', [OrderController::class, 'initiateDelivery']);
             Route::get('/completed/all', [VendorOrderController::class, 'vendorOrders']);
 
             Route::get('/vendor/{orderId}/items', [VendorOrderController::class, 'orderItems']);
@@ -230,6 +237,9 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
     });
 
     // Public routes
+
+    // Push notification VAPID key (no authentication required)
+    Route::get('/push/vapid-key', [PushSubscriptionController::class, 'vapidKey']);
 
     // Paystack payment routes (no authentication required)
     Route::get('/payment/callback', [PaymentController::class, 'callback']);

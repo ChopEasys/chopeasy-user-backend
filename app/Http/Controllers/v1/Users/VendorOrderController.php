@@ -195,7 +195,18 @@ class VendorOrderController extends Controller
                 $order->update(['status' => 'ready']);
                 $order->refresh();
 
-                $assignedRider = app(RiderAssignmentService::class)->assignNearestRider($order->fresh());
+                $assignmentService = app(RiderAssignmentService::class);
+                $assignedRider = $assignmentService->assignNearestRider($order->fresh());
+
+                // Notify all eligible agents that a delivery is available
+                try {
+                    $assignmentService->notifyEligibleAgents($order->fresh());
+                } catch (\Throwable $e) {
+                    Log::warning('Failed to notify eligible agents of delivery availability', [
+                        'order_id' => $order->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
 
                 if ($assignedRider) {
                     if (Schema::hasTable('notifications')) {

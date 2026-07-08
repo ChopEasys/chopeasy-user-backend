@@ -30,7 +30,7 @@ class AgentCommissionServiceTest extends TestCase
 
             public function riderBase(Order $order, ?float $riderPayoutAmount = null): float
             {
-                return $this->riderCompanyProfitBase($order, $riderPayoutAmount);
+                return $this->agentCompanyProfitBase($order, $riderPayoutAmount);
             }
         };
     }

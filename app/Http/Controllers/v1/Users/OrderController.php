@@ -24,6 +24,8 @@ use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Cookie as SymfonyCookie;
 use Illuminate\Support\Str;
 use App\Support\DeliveryTier;
+use App\Services\PushDispatchService;
+use App\Constants\PushNotificationType;
 
 
 class OrderController extends Controller
@@ -817,6 +819,39 @@ class OrderController extends Controller
 
             DB::commit();
 
+            // Send savings plan completion push notification if plan just became fully paid
+            if ($paymentStatus === 'paid' && $remainingAmount <= 0 && $deductedAmount > 0) {
+                try {
+                    $totalSaved = (float) $totalAmount;
+
+                    app(PushDispatchService::class)->dispatch(
+                        $user->id,
+                        PushNotificationType::SAVINGS_COMPLETED,
+                        [
+                            'title' => 'Savings Plan Completed! 🎉',
+                            'body' => "Your savings plan '{$order->order_number}' is now complete! Total saved: ₦" . number_format($totalSaved, 2),
+                            'url' => "/savings/{$order->id}",
+                            'type' => PushNotificationType::SAVINGS_COMPLETED,
+                            'plan_name' => $order->order_number,
+                            'total_amount' => number_format($totalSaved, 2),
+                            'order_number' => $order->order_number,
+                        ]
+                    );
+                } catch (\Throwable $e) {
+                    Log::warning("Savings completion notification failed for order #{$order->id}: " . $e->getMessage());
+                }
+
+                // Notify vendors via push + in-app when order becomes fully paid
+                try {
+                    app(VendorOrderPayoutNotifier::class)->notifyIfEligible($order->fresh()->load('items'));
+                } catch (\Throwable $e) {
+                    Log::warning('VendorOrderPayoutNotifier failed after order update', [
+                        'order_id' => $order->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
             return response()->json([
                 'message' => 'Order updated successfully',
                 'order' => $order->fresh()->load('items'),
@@ -1249,6 +1284,9 @@ class OrderController extends Controller
                 'fulfilled_at' => now(),
             ]);
 
+            // Dispatch push notification for order status changes
+            $this->dispatchOrderStatusNotification($order, $request->status);
+
             return response()->json([
                 'message' => 'Order status updated successfully',
                 'data' => ['id' => $order->id, 'order_number' => $order->order_number, 'status' => $order->status],
@@ -1259,6 +1297,89 @@ class OrderController extends Controller
                 'message' => 'Order not found.',
             ], 404);
         }
+    }
+
+    /**
+     * Dispatch a push notification to the customer based on order status change.
+     */
+    private function dispatchOrderStatusNotification(Order $order, string $status): void
+    {
+        $notificationData = match ($status) {
+            'confirmed' => [
+                'type' => PushNotificationType::ORDER_CONFIRMED,
+                'title' => 'Order Confirmed',
+                'body' => "Your order #{$order->order_number} has been confirmed. Estimated delivery: " . ($order->expected_delivery_date ? $order->expected_delivery_date->format('D, M j, Y') : 'TBD'),
+            ],
+            'processing' => [
+                'type' => PushNotificationType::ORDER_READY_PICKUP,
+                'title' => 'Order Ready for Pickup',
+                'body' => "Your order #{$order->order_number} is ready for pickup at " . ($order->delivery_address ?? 'the store'),
+            ],
+            'ongoing' => [
+                'type' => PushNotificationType::ORDER_OUT_FOR_DELIVERY,
+                'title' => 'Order Out for Delivery',
+                'body' => "Your order #{$order->order_number} is on its way! " . $this->getRiderInfo($order),
+            ],
+            'delivered' => [
+                'type' => PushNotificationType::ORDER_DELIVERED,
+                'title' => 'Order Delivered',
+                'body' => "Your order #{$order->order_number} has been delivered at " . now()->format('h:i A, M j, Y'),
+            ],
+            'cancelled' => [
+                'type' => PushNotificationType::ORDER_CANCELLED,
+                'title' => 'Order Cancelled',
+                'body' => "Your order #{$order->order_number} has been cancelled. Reason: Admin action",
+            ],
+            default => null,
+        };
+
+        if ($notificationData === null || !$order->user_id) {
+            return;
+        }
+
+        $payload = [
+            'title' => $notificationData['title'],
+            'body' => $notificationData['body'],
+            'url' => "/orders/{$order->id}",
+            'type' => $notificationData['type'],
+        ];
+
+        try {
+            app(PushDispatchService::class)->dispatch(
+                $order->user_id,
+                $notificationData['type'],
+                $payload
+            );
+        } catch (\Throwable $e) {
+            Log::error('Failed to dispatch order status push notification', [
+                'order_id' => $order->id,
+                'status' => $status,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Get rider/agent info string for out-for-delivery notifications.
+     */
+    private function getRiderInfo(Order $order): string
+    {
+        if (!$order->accepted_by) {
+            return 'Your rider is on the way.';
+        }
+
+        $rider = User::find($order->accepted_by);
+
+        if (!$rider) {
+            return 'Your rider is on the way.';
+        }
+
+        $name = $rider->fullname ?? 'Your rider';
+        $phone = $rider->phoneno ?? '';
+
+        return $phone
+            ? "Rider: {$name} ({$phone})"
+            : "Rider: {$name}";
     }
     public function userTransactions(Request $request)
     {
@@ -1529,6 +1650,37 @@ class OrderController extends Controller
                 'details' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Customer initiates delivery for a completed savings plan.
+     * Changes order status from pending to processing (triggers delivery flow).
+     */
+    public function initiateDelivery(Request $request, $orderId)
+    {
+        $user = $request->user();
+        $order = Order::where('id', $orderId)->where('user_id', $user->id)->first();
+
+        if (!$order) {
+            return response()->json(['error' => 'Order not found'], 404);
+        }
+
+        if ($order->status !== 'pending') {
+            return response()->json(['error' => 'Order has already been initiated or is not eligible'], 422);
+        }
+
+        $remaining = (float) ($order->remaining_amount ?? 0);
+        if ($remaining > 0) {
+            return response()->json(['error' => 'Savings plan is not yet complete. Remaining: ' . $remaining], 422);
+        }
+
+        $order->status = 'processing';
+        $order->save();
+
+        return response()->json([
+            'message' => 'Order initiated successfully! Your items are now being prepared for delivery.',
+            'order' => $order->fresh(),
+        ]);
     }
 
     /**
