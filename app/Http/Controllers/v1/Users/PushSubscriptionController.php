@@ -54,8 +54,8 @@ class PushSubscriptionController extends Controller
             ], 500);
         }
 
-        // Validate key lengths
-        if (strlen($publicKey) !== $expectedPublicLength) {
+        // Validate key lengths (allow ±2 chars for padding variations)
+        if (abs(strlen($publicKey) - $expectedPublicLength) > 2) {
             Log::error('Web Push: VAPID public key has incorrect length.', [
                 'expected' => $expectedPublicLength,
                 'actual' => strlen($publicKey),
@@ -66,7 +66,7 @@ class PushSubscriptionController extends Controller
             ], 500);
         }
 
-        if (strlen($privateKey) !== $expectedPrivateLength) {
+        if (abs(strlen($privateKey) - $expectedPrivateLength) > 2) {
             Log::error('Web Push: VAPID private key has incorrect length.', [
                 'expected' => $expectedPrivateLength,
                 'actual' => strlen($privateKey),
