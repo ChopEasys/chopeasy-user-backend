@@ -35,6 +35,10 @@ use App\Http\Controllers\Admin\AdminAgentCommissionReportController;
 use App\Http\Controllers\Admin\AdminRevenueController;
 use App\Http\Controllers\Admin\AdminNotificationController;
 use App\Http\Controllers\Admin\SlideController;
+use App\Http\Controllers\Admin\RoleController;
+use App\Http\Controllers\Admin\PermissionController;
+use App\Http\Controllers\Admin\AdminUserController;
+use App\Http\Controllers\Admin\AuditLogController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -138,7 +142,7 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
         });
     });
 
-    Route::middleware(['auth:api', 'role:Admin,Super Admin'])->group(function () {
+    Route::middleware(['auth:api', 'admin.auth'])->group(function () {
         Route::post('/blog', [BlogController::class, 'store']);
         Route::put('/blog/{id}', [BlogController::class, 'update']);
         Route::delete('/blog/{id}', [BlogController::class, 'destroy']);
@@ -234,6 +238,26 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
             Route::put('slides/{id}', [SlideController::class, 'update']);
             Route::delete('slides/{id}', [SlideController::class, 'destroy']);
         });
+
+        // RBAC - Roles Management
+        Route::get('/admin/roles', [RoleController::class, 'index'])->middleware('permission:manage_roles');
+        Route::post('/admin/roles', [RoleController::class, 'store'])->middleware('permission:manage_roles');
+        Route::put('/admin/roles/{id}', [RoleController::class, 'update'])->middleware('permission:manage_roles');
+        Route::delete('/admin/roles/{id}', [RoleController::class, 'destroy'])->middleware('permission:manage_roles');
+        Route::put('/admin/roles/{id}/permissions', [RoleController::class, 'syncPermissions'])->middleware('permission:manage_roles');
+
+        // RBAC - Permissions
+        Route::get('/admin/permissions', [PermissionController::class, 'index'])->middleware('permission:manage_roles');
+
+        // RBAC - Admin Users Management
+        Route::get('/admin/admin-users', [AdminUserController::class, 'index'])->middleware('permission:manage_admins');
+        Route::post('/admin/admin-users', [AdminUserController::class, 'store'])->middleware('permission:manage_admins');
+        Route::put('/admin/admin-users/{id}', [AdminUserController::class, 'update'])->middleware('permission:manage_admins');
+        Route::post('/admin/admin-users/{id}/deactivate', [AdminUserController::class, 'deactivate'])->middleware('permission:manage_admins');
+        Route::post('/admin/admin-users/{id}/activate', [AdminUserController::class, 'activate'])->middleware('permission:manage_admins');
+
+        // RBAC - Audit Logs
+        Route::get('/admin/audit-logs', [AuditLogController::class, 'index'])->middleware('permission:view_audit_log');
     });
 
     // Public routes

@@ -110,10 +110,20 @@ class AuthController extends Controller
                 );
             }
 
+            $responseData = $user;
+
+            if (in_array($user->user_type, ['admin', 'super_admin'])) {
+                $responseData = [
+                    'user' => $user,
+                    'permissions' => $user->getEffectivePermissions(),
+                    'rbac_role' => $user->adminRoles()->with('permissions')->first(),
+                ];
+            }
+
             return JsonResponser::send(
                 false,
                 'Authenticated user retrieved successfully.',
-                $user, // ✅ return raw user model
+                $responseData,
                 200
             );
         } catch (\Exception $e) {

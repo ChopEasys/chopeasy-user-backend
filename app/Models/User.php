@@ -178,5 +178,37 @@ public function isStoreOpen()
     return $currentTime >= $openingTime && $currentTime <= $closingTime;
 }
 
+/**
+ * Get the admin roles assigned to this user via the admin_role pivot table.
+ */
+public function adminRoles()
+{
+    return $this->belongsToMany(Role::class, 'admin_role')
+        ->withPivot('assigned_by', 'created_at');
+}
 
+/**
+ * Get the effective permissions for this user as an array of permission name strings.
+ * Collects all permissions from all assigned admin roles.
+ */
+public function getEffectivePermissions(): array
+{
+    return $this->adminRoles()
+        ->with('permissions')
+        ->get()
+        ->pluck('permissions')
+        ->flatten()
+        ->pluck('name')
+        ->unique()
+        ->values()
+        ->toArray();
+}
+
+/**
+ * Check if this user is a super admin.
+ */
+public function isSuperAdmin(): bool
+{
+    return $this->user_type === 'super_admin';
+}
 }

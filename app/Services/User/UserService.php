@@ -272,11 +272,18 @@ class UserService
 
         $roles = $user->getRoleNames()->toArray();
 
-        return JsonResponser::send(false, 'Login successful.', [
+        $responseData = [
             'token' => $token,
             'user'  => $user,
             'roles' => $roles,
-        ], 200)->withCookie(cookie()->forget('cart_session_id'));
+        ];
+
+        if (in_array($user->user_type, ['admin', 'super_admin'])) {
+            $responseData['permissions'] = $user->getEffectivePermissions();
+            $responseData['rbac_role'] = $user->adminRoles()->with('permissions')->first();
+        }
+
+        return JsonResponser::send(false, 'Login successful.', $responseData, 200)->withCookie(cookie()->forget('cart_session_id'));
     }
 
 
