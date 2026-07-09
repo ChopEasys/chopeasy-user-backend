@@ -279,8 +279,14 @@ class UserService
         ];
 
         if (in_array($user->user_type, ['admin', 'super_admin'])) {
-            $responseData['permissions'] = $user->getEffectivePermissions();
-            $responseData['rbac_role'] = $user->adminRoles()->with('permissions')->first();
+            try {
+                $responseData['permissions'] = $user->getEffectivePermissions();
+                $responseData['rbac_role'] = $user->adminRoles()->with('permissions')->first();
+            } catch (\Exception $e) {
+                // RBAC tables may not exist yet; skip permissions gracefully
+                $responseData['permissions'] = [];
+                $responseData['rbac_role'] = null;
+            }
         }
 
         return JsonResponser::send(false, 'Login successful.', $responseData, 200)->withCookie(cookie()->forget('cart_session_id'));
