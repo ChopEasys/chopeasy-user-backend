@@ -270,7 +270,11 @@ class UserService
             'ip_address' => $request->ip(),
         ]);
 
-        $roles = $user->getRoleNames()->toArray();
+        try {
+            $roles = $user->getRoleNames()->toArray();
+        } catch (\Exception $e) {
+            $roles = [];
+        }
 
         $responseData = [
             'token' => $token,
