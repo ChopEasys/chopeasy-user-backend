@@ -66,6 +66,11 @@ class AuthController extends Controller
         try {
             return $this->userService->login($request, $request->only('email', 'password'));
         } catch (Exception $e) {
+            \Log::error('Login failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
             return JsonResponser::send(
                 true,
                 'An error occurred during login. Please try again later.',
