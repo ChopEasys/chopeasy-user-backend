@@ -93,8 +93,10 @@ class RiderAssignmentService
 
         /** @var User $agent */
         $agent = $selected['rider'];
-        $order->accepted_by = $agent->id;
-        $order->save();
+
+        // Do NOT pre-assign accepted_by here.
+        // All eligible agents should see the order in availablePickups.
+        // accepted_by is only set when an agent explicitly calls acceptDelivery.
 
         return $agent;
     }

@@ -1888,7 +1888,7 @@ public function availablePickups(Request $request)
     // (see acceptDelivery). An order already accepted by THIS agent stays
     // visible too (e.g. after a reload), but orders accepted by someone
     // else drop out immediately.
-    $orders = Order::with(['items.vendorOrders.vendor', 'user'])
+    $orders = Order::with(['items.vendorOrders.vendor', 'user', 'vendorOrders.vendor'])
         ->where('status', 'ready')
         ->paidForFulfillment()
         ->where(function ($q) use ($agent) {
@@ -1900,8 +1900,24 @@ public function availablePickups(Request $request)
                 return false;
             }
 
+            // Resolve pickup coordinates from vendor if not set on order
             $pickupLat = $order->pickup_latitude !== null ? (float) $order->pickup_latitude : null;
             $pickupLng = $order->pickup_longitude !== null ? (float) $order->pickup_longitude : null;
+
+            if (is_null($pickupLat) || is_null($pickupLng) || !$this->isValidCoordinates($pickupLat, $pickupLng)) {
+                // Try to get from vendor
+                foreach ($order->vendorOrders as $vendorOrder) {
+                    $vendorLat = $vendorOrder->vendor?->latitude;
+                    $vendorLng = $vendorOrder->vendor?->longitude;
+                    if ($vendorLat && $vendorLng) {
+                        $pickupLat = (float) $vendorLat;
+                        $pickupLng = (float) $vendorLng;
+                        // Persist for future lookups
+                        $order->update(['pickup_latitude' => $pickupLat, 'pickup_longitude' => $pickupLng]);
+                        break;
+                    }
+                }
+            }
 
             if (!$this->isValidCoordinates($pickupLat, $pickupLng)) {
                 return false;

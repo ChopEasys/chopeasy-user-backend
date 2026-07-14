@@ -469,6 +469,22 @@ class AuthController extends Controller
             if ($request->filled('longitude')) {
                 $user->longitude = $request->longitude;
             }
+            // Geocode from address if lat/lng still not set
+            if (empty($user->latitude) || empty($user->longitude)) {
+                $address = $request->input('storeAddress') ?? $user->address;
+                if ($address) {
+                    try {
+                        $geoService = app(\App\Services\GeoLocationService::class);
+                        [$lat, $lng] = $geoService->getCoordinatesFromAddress($address);
+                        if ($lat && $lng) {
+                            $user->latitude = $lat;
+                            $user->longitude = $lng;
+                        }
+                    } catch (\Throwable $e) {
+                        // Geocoding failed, skip silently
+                    }
+                }
+            }
             break;
     }
 
