@@ -46,8 +46,11 @@ class AdminRevenueController extends Controller
             $riderPayout = RiderPayout::where('order_id', $order->id)->sum('amount');
 
             // Company revenue = service fee + delivery profit (delivery fee - rider payout) + product markup
+            // This is what the company keeps BEFORE agent commissions (agent commissions shown separately)
             $serviceFee = $revenue['service_fee'];
-            $deliveryProfit = $revenue['delivery_profit'];
+            $deliveryFee = $revenue['delivery_fee_total'];
+            $actualRiderPayout = (float) $riderPayout > 0 ? (float) $riderPayout : $revenue['rider_payout'];
+            $deliveryProfit = round(max($deliveryFee - $actualRiderPayout, 0), 2);
             $productMarkup = $revenue['product_markup'];
             $companyRevenue = round($serviceFee + $deliveryProfit + $productMarkup, 2);
 
@@ -58,11 +61,11 @@ class AdminRevenueController extends Controller
                 'payment_status' => $order->payment_status,
                 'customer_name' => $order->user?->fullname ?? 'N/A',
                 'total_amount' => (float) $order->total_amount,
-                'product_markup' => $revenue['product_markup'],
-                'service_fee' => $revenue['service_fee'],
-                'delivery_fee' => $revenue['delivery_fee_total'],
-                'rider_payout' => round((float) $riderPayout, 2),
-                'delivery_profit' => $revenue['delivery_profit'],
+                'product_markup' => round($productMarkup, 2),
+                'service_fee' => round($serviceFee, 2),
+                'delivery_fee' => round($deliveryFee, 2),
+                'rider_payout' => round($actualRiderPayout, 2),
+                'delivery_profit' => $deliveryProfit,
                 'vendor_payout' => round((float) $vendorPayout, 2),
                 'agent_commission' => round((float) $agentCommissions, 2),
                 'company_revenue' => $companyRevenue,

@@ -107,6 +107,17 @@ class UserService
             }
         }
 
+        // Agent geolocation - use provided coordinates or geocode from address
+        if (($data['user_type'] ?? null) === 'agent') {
+            if (empty($data['latitude']) || empty($data['longitude'])) {
+                if (!empty($data['address'])) {
+                    [$lat, $lng] = $this->geoLocationService->getCoordinatesFromAddress($data['address']);
+                    $data['latitude'] = $lat ?? $data['latitude'] ?? null;
+                    $data['longitude'] = $lng ?? $data['longitude'] ?? null;
+                }
+            }
+        }
+
         // Bank details (do not pass to user create)
         $bankRelationName = $this->bankRelationName($data['user_type'] ?? null);
         $bankData = null;
