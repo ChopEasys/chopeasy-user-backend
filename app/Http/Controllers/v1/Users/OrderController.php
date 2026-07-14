@@ -1747,7 +1747,111 @@ class OrderController extends Controller
         return array_values($groups);
     }
 
+private function haversineDistanceKm(float $lat1, float $lng1, float $lat2, float $lng2): float
+{
+    $earthRadius = 6371;
 
+    $dLat = deg2rad($lat2 - $lat1);
+    $dLng = deg2rad($lng2 - $lng1);
+
+    $a = sin($dLat / 2) * sin($dLat / 2)
+        + cos(deg2rad($lat1)) * cos(deg2rad($lat2))
+        * sin($dLng / 2) * sin($dLng / 2);
+    $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+    return $earthRadius * $c;
+}
+
+private function isValidCoordinates(?float $lat, ?float $lng): bool
+{
+    return !is_null($lat) && !is_null($lng)
+        && $lat >= -90 && $lat <= 90
+        && $lng >= -180 && $lng <= 180;
+}
+
+// public function availablePickups(Request $request)
+// {
+//     $agent = $request->user();
+
+//     if ($agent->user_type !== 'agent') {
+//         return response()->json(['error' => 'Unauthorized'], 403);
+//     }
+
+//     if (!$agent->is_delivery_agent) {
+//         return response()->json([
+//             'error' => false,
+//             'message' => 'You are not yet an approved delivery agent.',
+//             'data' => [],
+//         ]);
+//     }
+
+//     // Catch-up assignment for ready orders, including stale offers created before
+//     // assignment used vendor pickup coordinates.
+//     $assignmentService = app(RiderAssignmentService::class);
+//     $readyOrders = Order::where('status', 'ready')
+//         ->paidForFulfillment()
+//         ->latest()
+//         ->take(50)
+//         ->get();
+
+//     foreach ($readyOrders as $readyOrder) {
+//         $assignmentService->assignNearestRider($readyOrder, true);
+//     }
+
+//     $agentTier = (int) ($agent->delivery_tier ?? 1);
+
+//     $orders = Order::with(['items.vendorOrders.vendor', 'user'])
+//         ->where('status', 'ready')
+//         ->paidForFulfillment()
+//         ->where('accepted_by', $agent->id)
+//         ->get()
+//         ->filter(function ($order) use ($agentTier) {
+//         return DeliveryTier::tierCanHandle($agentTier, $order->fulfillmentAmount());
+//     })
+//         ->map(function ($order) {
+//             $vendorGroups = $this->buildVendorPickupGroups($order);
+//             $stopCount = count($vendorGroups);
+//             $first = $vendorGroups[0] ?? null;
+
+//             $summaryVendorName = $stopCount > 1
+//                 ? 'Multiple stores ('.$stopCount.' pickups)'
+//                 : ($first['vendor_name'] ?? null);
+
+//             return [
+//                 'id' => $order->id,
+//                 'order_number' => $order->order_number,
+//                 'multi_vendor' => $stopCount > 1,
+//                 'vendor_stop_count' => $stopCount,
+
+//                 'vendor_name' => $summaryVendorName,
+//                 'vendor_phone' => $stopCount === 1 ? ($first['vendor_phone'] ?? null) : null,
+//                 'pickup_address' => $stopCount === 1 ? ($first['pickup_address'] ?? null) : null,
+//                 'vendor_address' => $stopCount === 1 ? ($first['pickup_address'] ?? null) : null,
+//                 'pickup_latitude' => $first['pickup_latitude'] ?? null,
+//                 'pickup_longitude' => $first['pickup_longitude'] ?? null,
+
+//                 'customer_name' => $order->user->fullname ?? null,
+//                 'customer_phone' => $order->user->phoneno ?? null,
+//                 'dropoff_address' => $order->delivery_address,
+//                 'customer_address' => $order->delivery_address,
+//                 'delivery_latitude' => $order->delivery_latitude,
+//                 'delivery_longitude' => $order->delivery_longitude,
+
+//                 'status' => $order->status,
+//                 'accepted_by' => $order->accepted_by,
+
+//                 'items' => $order->items->map(fn ($item) => $this->formatOrderItemRowWithVendor($item))->values(),
+//                 'vendor_pickup_stops' => $vendorGroups,
+//             ];
+//         })
+//         ->values();
+
+//     return response()->json([
+//         'error' => false,
+//         'message' => 'Available pickups fetched successfully',
+//         'data' => $orders,
+//     ]);
+// }
 
 public function availablePickups(Request $request)
 {
@@ -1765,29 +1869,46 @@ public function availablePickups(Request $request)
         ]);
     }
 
-    // Catch-up assignment for ready orders, including stale offers created before
-    // assignment used vendor pickup coordinates.
-    $assignmentService = app(RiderAssignmentService::class);
-    $readyOrders = Order::where('status', 'ready')
-        ->paidForFulfillment()
-        ->latest()
-        ->take(50)
-        ->get();
+    $agentLat = $agent->latitude !== null ? (float) $agent->latitude : null;
+    $agentLng = $agent->longitude !== null ? (float) $agent->longitude : null;
 
-    foreach ($readyOrders as $readyOrder) {
-        $assignmentService->assignNearestRider($readyOrder, true);
+    if (!$this->isValidCoordinates($agentLat, $agentLng)) {
+        return response()->json([
+            'error' => false,
+            'message' => 'Set your location to see nearby pickups.',
+            'data' => [],
+        ]);
     }
 
     $agentTier = (int) ($agent->delivery_tier ?? 1);
+    $radiusKm = (float) config('services.google_maps.rider_assignment_radius_km', 12);
 
+    // Visibility rule: any ready, paid, unclaimed order within radius and
+    // tier limit is visible to every eligible agent. First to accept wins
+    // (see acceptDelivery). An order already accepted by THIS agent stays
+    // visible too (e.g. after a reload), but orders accepted by someone
+    // else drop out immediately.
     $orders = Order::with(['items.vendorOrders.vendor', 'user'])
         ->where('status', 'ready')
         ->paidForFulfillment()
-        ->where('accepted_by', $agent->id)
+        ->where(function ($q) use ($agent) {
+            $q->whereNull('accepted_by')->orWhere('accepted_by', $agent->id);
+        })
         ->get()
-        ->filter(function ($order) use ($agentTier) {
-        return DeliveryTier::tierCanHandle($agentTier, $order->fulfillmentAmount());
-    })
+        ->filter(function ($order) use ($agentTier, $agentLat, $agentLng, $radiusKm) {
+            if (!DeliveryTier::tierCanHandle($agentTier, $order->fulfillmentAmount())) {
+                return false;
+            }
+
+            $pickupLat = $order->pickup_latitude !== null ? (float) $order->pickup_latitude : null;
+            $pickupLng = $order->pickup_longitude !== null ? (float) $order->pickup_longitude : null;
+
+            if (!$this->isValidCoordinates($pickupLat, $pickupLng)) {
+                return false;
+            }
+
+            return $this->haversineDistanceKm($agentLat, $agentLng, $pickupLat, $pickupLng) <= $radiusKm;
+        })
         ->map(function ($order) {
             $vendorGroups = $this->buildVendorPickupGroups($order);
             $stopCount = count($vendorGroups);
@@ -1851,7 +1972,7 @@ public function availablePickups(Request $request)
         ], $status);
     }
 
-public function acceptDelivery(Request $request, $orderId, AutomaticPayoutService $automaticPayoutService, AgentCommissionService $agentCommissionService)
+    public function acceptDelivery(Request $request, $orderId, AutomaticPayoutService $automaticPayoutService, AgentCommissionService $agentCommissionService)
 {
     $agent = $request->user();
 
@@ -1866,43 +1987,52 @@ public function acceptDelivery(Request $request, $orderId, AutomaticPayoutServic
     $agent->loadMissing('agentBankDetails');
 
     if (!$agent->agentBankDetails) {
-            return $this->failure(
-        'Please add your bank account details before accepting deliveries.',
-        422
-    );
+        return $this->failure(
+            'Please add your bank account details before accepting deliveries.',
+            422
+        );
     }
 
-    $order = Order::with('items')
-        ->where('id', $orderId)
-        ->where('status', 'ready')
-        ->paidForFulfillment()
-        ->where(function ($q) use ($agent) {
-            $q->whereNull('accepted_by')
-                ->orWhere('accepted_by', $agent->id);
-        })
-        ->first();
+    try {
+        $order = DB::transaction(function () use ($orderId, $agent) {
+            $order = Order::with('items')
+                ->where('id', $orderId)
+                ->where('status', 'ready')
+                ->paidForFulfillment()
+                ->where(function ($q) use ($agent) {
+                    $q->whereNull('accepted_by')->orWhere('accepted_by', $agent->id);
+                })
+                ->lockForUpdate()
+                ->first();
+
+            if (!$order) {
+                return null;
+            }
+
+            $agentTier = (int) ($agent->delivery_tier ?? 1);
+            if (!DeliveryTier::tierCanHandle($agentTier, $order->fulfillmentAmount())) {
+                throw new \RuntimeException('TIER_LIMIT');
+            }
+
+            $order->update([
+                'accepted_by' => $agent->id,
+                'status' => 'ongoing',
+            ]);
+
+            return $order;
+        });
+    } catch (\RuntimeException $e) {
+        if ($e->getMessage() === 'TIER_LIMIT') {
+            return response()->json([
+                'error' => 'This order exceeds your current delivery tier limit. Upgrade your tier to accept larger orders.',
+            ], 403);
+        }
+        throw $e;
+    }
 
     if (!$order) {
-        return response()->json(['error' => 'Order already taken or not available'], 400);
+        return $this->failure('Order already taken or not available.', 400);
     }
-
-$agentTier = (int) ($agent->delivery_tier ?? 1);
-if (!\App\Support\DeliveryTier::tierCanHandle($agentTier, $order->fulfillmentAmount())) {
-    return response()->json([
-        'error' => 'This order exceeds your current delivery tier limit. Upgrade your tier to accept larger orders.',
-    ], 403);
-}
-if (!$order) {
-    return $this->failure(
-        'Order already taken or not available.',
-        400
-    );
-}
-
-    $order->update([
-        'accepted_by' => $agent->id,
-        'status' => 'ongoing',
-    ]);
 
     $vendorPayouts = $automaticPayoutService->processVendorPayoutsForOrder(
         $order->fresh(['items.vendorOrders.vendor', 'user'])
@@ -1912,12 +2042,81 @@ if (!$order) {
         $order->fresh(['items.vendorOrders.vendor', 'user']),
         $vendorPayouts
     );
-return $this->success([
-    'order_id' => $order->id,
-    'status' => $order->status,
-    'vendor_payouts' => $vendorPayouts,
-], 'Delivery accepted successfully');
+
+    return $this->success([
+        'order_id' => $order->id,
+        'status' => $order->status,
+        'vendor_payouts' => $vendorPayouts,
+    ], 'Delivery accepted successfully');
 }
+
+// public function acceptDelivery(Request $request, $orderId, AutomaticPayoutService $automaticPayoutService, AgentCommissionService $agentCommissionService)
+// {
+//     $agent = $request->user();
+
+//     if ($agent->user_type !== 'agent') {
+//         return response()->json(['error' => 'Unauthorized'], 403);
+//     }
+
+//     if (!$agent->is_delivery_agent) {
+//         return response()->json(['error' => 'You are not an approved delivery agent.'], 403);
+//     }
+
+//     $agent->loadMissing('agentBankDetails');
+
+//     if (!$agent->agentBankDetails) {
+//             return $this->failure(
+//         'Please add your bank account details before accepting deliveries.',
+//         422
+//     );
+//     }
+
+//     $order = Order::with('items')
+//         ->where('id', $orderId)
+//         ->where('status', 'ready')
+//         ->paidForFulfillment()
+//         ->where(function ($q) use ($agent) {
+//             $q->whereNull('accepted_by')
+//                 ->orWhere('accepted_by', $agent->id);
+//         })
+//         ->first();
+
+//     if (!$order) {
+//         return response()->json(['error' => 'Order already taken or not available'], 400);
+//     }
+
+// $agentTier = (int) ($agent->delivery_tier ?? 1);
+// if (!\App\Support\DeliveryTier::tierCanHandle($agentTier, $order->fulfillmentAmount())) {
+//     return response()->json([
+//         'error' => 'This order exceeds your current delivery tier limit. Upgrade your tier to accept larger orders.',
+//     ], 403);
+// }
+// if (!$order) {
+//     return $this->failure(
+//         'Order already taken or not available.',
+//         400
+//     );
+// }
+
+//     $order->update([
+//         'accepted_by' => $agent->id,
+//         'status' => 'ongoing',
+//     ]);
+
+//     $vendorPayouts = $automaticPayoutService->processVendorPayoutsForOrder(
+//         $order->fresh(['items.vendorOrders.vendor', 'user'])
+//     );
+
+//     $agentCommissionService->creditVendorReferralsAfterPayout(
+//         $order->fresh(['items.vendorOrders.vendor', 'user']),
+//         $vendorPayouts
+//     );
+// return $this->success([
+//     'order_id' => $order->id,
+//     'status' => $order->status,
+//     'vendor_payouts' => $vendorPayouts,
+// ], 'Delivery accepted successfully');
+// }
     public function myPickups(Request $request)
     {
         $rider = $request->user();

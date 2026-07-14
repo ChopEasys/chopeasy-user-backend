@@ -191,46 +191,65 @@ class VendorOrderController extends Controller
 
         if ($orderFullyReady) {
             // Move to rider workflow only when nobody has picked up yet.
+            // if ($order->status === 'pending') {
+            //     $order->update(['status' => 'ready']);
+            //     $order->refresh();
+
+            //     $assignmentService = app(RiderAssignmentService::class);
+            //     $assignedRider = $assignmentService->assignNearestRider($order->fresh());
+
+            //     // Notify all eligible agents that a delivery is available
+            //     try {
+            //         $assignmentService->notifyEligibleAgents($order->fresh());
+            //     } catch (\Throwable $e) {
+            //         Log::warning('Failed to notify eligible agents of delivery availability', [
+            //             'order_id' => $order->id,
+            //             'error' => $e->getMessage(),
+            //         ]);
+            //     }
+
+            //     if ($assignedRider) {
+            //         if (Schema::hasTable('notifications')) {
+            //             try {
+            //                 Notification::send($assignedRider, new NewPickupNotification($order->fresh()));
+            //             } catch (\Throwable $e) {
+            //                 Log::warning('Failed to persist pickup notification; falling back to event.', [
+            //                     'order_id' => $order->id,
+            //                     'rider_id' => $assignedRider->id ?? null,
+            //                     'error' => $e->getMessage(),
+            //                 ]);
+            //                 event(new OrderReadyForPickup($order));
+            //             }
+            //         } else {
+            //             Log::warning('notifications table missing; using pickup event fallback.', [
+            //                 'order_id' => $order->id,
+            //                 'rider_id' => $assignedRider->id ?? null,
+            //             ]);
+            //             event(new OrderReadyForPickup($order));
+            //         }
+            //     } else {
+            //         event(new OrderReadyForPickup($order));
+            //     }
+            // }
             if ($order->status === 'pending') {
-                $order->update(['status' => 'ready']);
-                $order->refresh();
+    $order->update(['status' => 'ready']);
+    $order->refresh();
 
-                $assignmentService = app(RiderAssignmentService::class);
-                $assignedRider = $assignmentService->assignNearestRider($order->fresh());
+    $assignmentService = app(RiderAssignmentService::class);
 
-                // Notify all eligible agents that a delivery is available
-                try {
-                    $assignmentService->notifyEligibleAgents($order->fresh());
-                } catch (\Throwable $e) {
-                    Log::warning('Failed to notify eligible agents of delivery availability', [
-                        'order_id' => $order->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
+    // No pre-assignment: leave accepted_by null so every eligible agent
+    // sees this in availablePickups. First to call acceptDelivery wins.
+    try {
+        $assignmentService->notifyEligibleAgents($order->fresh());
+    } catch (\Throwable $e) {
+        Log::warning('Failed to notify eligible agents of delivery availability', [
+            'order_id' => $order->id,
+            'error' => $e->getMessage(),
+        ]);
+    }
 
-                if ($assignedRider) {
-                    if (Schema::hasTable('notifications')) {
-                        try {
-                            Notification::send($assignedRider, new NewPickupNotification($order->fresh()));
-                        } catch (\Throwable $e) {
-                            Log::warning('Failed to persist pickup notification; falling back to event.', [
-                                'order_id' => $order->id,
-                                'rider_id' => $assignedRider->id ?? null,
-                                'error' => $e->getMessage(),
-                            ]);
-                            event(new OrderReadyForPickup($order));
-                        }
-                    } else {
-                        Log::warning('notifications table missing; using pickup event fallback.', [
-                            'order_id' => $order->id,
-                            'rider_id' => $assignedRider->id ?? null,
-                        ]);
-                        event(new OrderReadyForPickup($order));
-                    }
-                } else {
-                    event(new OrderReadyForPickup($order));
-                }
-            }
+    event(new OrderReadyForPickup($order));
+}
         } elseif ($order->status === 'ready') {
             // No longer fully ready (unmarked item, etc.) — pull back from rider queue.
             $order->update(['status' => 'pending']);
