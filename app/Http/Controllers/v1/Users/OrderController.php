@@ -984,22 +984,19 @@ class OrderController extends Controller
             }
         });
 
-        $fresh = $order->fresh(['items.vendorOrders.vendor', 'user']);
-        // $riderPayout = $automaticPayoutService->processRiderPayoutForOrder($fresh);
-        // $vendorCatchUp = $automaticPayoutService->processVendorPayoutsIfOutstanding(
-        //     $order->fresh(['items.vendorOrders.vendor', 'user'])
-        // );
-
         $orderForCommission = $order->fresh(['user']);
-        $agentCommissionService->creditCustomerOrderOnDeliveryConfirm($orderForCommission);
-        $agentCommissionService->creditAgentReferralAfterPayout($orderForCommission, $riderPayout);
+        try {
+            $agentCommissionService->creditCustomerOrderOnDeliveryConfirm($orderForCommission);
+        } catch (\Throwable $e) {
+            // Don't fail the confirmation if commission crediting has issues
+            \Log::warning('Commission credit failed on delivery confirm', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return response()->json([
             'message' => 'Order confirmed successfully',
-            'payouts' => [
-                'rider_payout' => $riderPayout,
-                // 'vendor_payouts' => $vendorCatchUp,
-            ],
         ]);
     }
 

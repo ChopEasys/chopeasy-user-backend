@@ -75,7 +75,19 @@ class PricingService
 
         $baseFee = (float) $this->pricingConfig->base_charge;
         $weightFee = $this->weightTier->calculateWeightFee($totalWeight);
+
+        // Determine if base fee applies based on configurable threshold
+        $baseFeeThreshold = (float) ($this->pricingConfig->base_fee_threshold ?? 20000);
+        $baseFeeApplied = $resolvedCustomerSubtotal >= $baseFeeThreshold;
+
+        // Use different platform % based on whether base fee is applied
         $platformPct = max(0, min(100, (float) ($this->weightTier->platform_percentage ?? 0)));
+        if (!$baseFeeApplied) {
+            // Higher platform % when base fee is waived (order is below threshold)
+            $noBaseFeePlatformPct = (float) ($this->pricingConfig->no_base_fee_platform_percentage ?? 60);
+            $platformPct = max(0, min(100, $noBaseFeePlatformPct));
+        }
+
         $weightFeePlatformTake = round($weightFee * ($platformPct / 100), 2);
         $weightFeeRiderShare = round(max($weightFee - $weightFeePlatformTake, 0), 2);
         $serviceFeePercent = (float) ($this->pricingConfig->service_fee_percent ?? 0);
@@ -87,15 +99,16 @@ class PricingService
         $zone = RiderPayoutRule::findZoneForDistance($distanceInKm, $this->regionId);
         $distanceFee = $zone ? $zone->getZoneFee() : 0;
 
-        // Base fee is only added if customer subtotal is 10,000 Naira or more
-        $appliedBaseFee = $resolvedCustomerSubtotal >= 10000 ? $baseFee : 0;
+        // Base fee is only added if customer subtotal meets the threshold
+        $appliedBaseFee = $baseFeeApplied ? $baseFee : 0;
         $deliveryFeeTotal = $appliedBaseFee + $weightFee + $distanceFee;
 
         return [
             'base_charge' => round($baseFee, 2),
             'base_fee' => round($appliedBaseFee, 2),
             'base_fee_applied' => round($appliedBaseFee, 2),
-            'base_fee_waived' => $resolvedCustomerSubtotal < 10000,
+            'base_fee_waived' => !$baseFeeApplied,
+            'base_fee_threshold' => round($baseFeeThreshold, 2),
             'weight_fee' => round($weightFee, 2),
             'weight_service_fee' => round($weightFee, 2),
             'weight_platform_percentage' => round($platformPct, 2),

@@ -16,6 +16,8 @@ class CreatePricingConfigRequest extends FormRequest
         return [
             'name' => 'required|string|max:255',
             'base_charge' => 'required|numeric|min:0',  // Base fee (handling, packaging, dispatch)
+            'base_fee_threshold' => 'nullable|numeric|min:0',  // Min subtotal for base fee to apply
+            'no_base_fee_platform_percentage' => 'nullable|numeric|min:0|max:100', // Platform % when no base fee
             'service_charge' => 'nullable|numeric|min:0',
             'service_fee_percent' => 'nullable|numeric|min:0|max:100',
             'product_markup_percent' => 'nullable|numeric|min:0|max:100',

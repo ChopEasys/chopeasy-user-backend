@@ -12,6 +12,8 @@ class PricingConfig extends Model
     protected $fillable = [
         'name',
         'base_charge',
+        'base_fee_threshold',
+        'no_base_fee_platform_percentage',
         'service_charge',
         'service_fee_percent',
         'product_markup_percent',
@@ -26,6 +28,8 @@ class PricingConfig extends Model
 
     protected $casts = [
         'base_charge' => 'decimal:2',
+        'base_fee_threshold' => 'decimal:2',
+        'no_base_fee_platform_percentage' => 'decimal:2',
         'service_charge' => 'decimal:2',
         'service_fee_percent' => 'decimal:2',
         'product_markup_percent' => 'decimal:2',
