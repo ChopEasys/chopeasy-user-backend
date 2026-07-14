@@ -310,7 +310,7 @@ class UsersTableSeeder extends Seeder
                 'lga' => NULL,
                 'state' => NULL,
                 'country' => NULL,
-                'email' => 'chopeasy@gmail.com',
+                'email' => 'chopeasyng@gmail.com',
                 'latitude' => NULL,
                 'longitude' => NULL,
                 'main_wallet' => '5000.00',

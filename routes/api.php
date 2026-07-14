@@ -152,6 +152,7 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
         Route::get('/admin/users', [AuthController::class, 'getAllUsersForAdmin']);
         Route::get('/admin/users/{id}', [AuthController::class, 'getSingleUserForAdmin']);
         Route::post('/admin/users/{id}/toggle-status', [AuthController::class, 'toggleUserStatus']);
+        Route::delete('/admin/users/{id}', [AuthController::class, 'deleteUser']);
 
         // Admin Dashboard
         Route::get('/admin/dashboard/metrics', [AdminDashboardController::class, 'metrics']);

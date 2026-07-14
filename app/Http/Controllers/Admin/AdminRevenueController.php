@@ -45,7 +45,11 @@ class AdminRevenueController extends Controller
             $vendorPayout = VendorPayout::where('order_id', $order->id)->sum('amount');
             $riderPayout = RiderPayout::where('order_id', $order->id)->sum('amount');
 
-            $netRevenue = $revenue['platform_revenue_total'] - (float) $agentCommissions;
+            // Company revenue = service fee + delivery profit (delivery fee - rider payout) + product markup
+            $serviceFee = $revenue['service_fee'];
+            $deliveryProfit = $revenue['delivery_profit'];
+            $productMarkup = $revenue['product_markup'];
+            $companyRevenue = round($serviceFee + $deliveryProfit + $productMarkup, 2);
 
             return [
                 'id' => $order->id,
@@ -57,28 +61,34 @@ class AdminRevenueController extends Controller
                 'product_markup' => $revenue['product_markup'],
                 'service_fee' => $revenue['service_fee'],
                 'delivery_fee' => $revenue['delivery_fee_total'],
-                'delivery_profit' => $revenue['delivery_profit'],
-                'vendor_commission' => $revenue['vendor_take_total'],
-                'agent_commission' => round((float) $agentCommissions, 2),
-                'vendor_payout' => round((float) $vendorPayout, 2),
                 'rider_payout' => round((float) $riderPayout, 2),
-                'platform_revenue' => $revenue['platform_revenue_total'],
-                'net_revenue' => round($netRevenue, 2),
+                'delivery_profit' => $revenue['delivery_profit'],
+                'vendor_payout' => round((float) $vendorPayout, 2),
+                'agent_commission' => round((float) $agentCommissions, 2),
+                'company_revenue' => $companyRevenue,
                 'created_at' => $order->created_at?->toIso8601String(),
             ];
         });
 
         // Calculate totals from current page for display
-        $totalRevenue = $rows->sum('platform_revenue');
+        $totalServiceFee = $rows->sum('service_fee');
+        $totalDeliveryProfit = $rows->sum('delivery_profit');
+        $totalProductMarkup = $rows->sum('product_markup');
+        $totalCompanyRevenue = $rows->sum('company_revenue');
         $totalAgentCommission = $rows->sum('agent_commission');
-        $totalNetRevenue = $rows->sum('net_revenue');
+        $totalVendorPayout = $rows->sum('vendor_payout');
+        $totalRiderPayout = $rows->sum('rider_payout');
 
         return response()->json([
             'data' => $rows,
             'summary' => [
-                'total_revenue' => round($totalRevenue, 2),
+                'total_service_fee' => round($totalServiceFee, 2),
+                'total_delivery_profit' => round($totalDeliveryProfit, 2),
+                'total_product_markup' => round($totalProductMarkup, 2),
+                'total_company_revenue' => round($totalCompanyRevenue, 2),
                 'total_agent_commission' => round($totalAgentCommission, 2),
-                'total_net_revenue' => round($totalNetRevenue, 2),
+                'total_vendor_payout' => round($totalVendorPayout, 2),
+                'total_rider_payout' => round($totalRiderPayout, 2),
                 'order_count' => $paginator->total(),
             ],
             'meta' => [

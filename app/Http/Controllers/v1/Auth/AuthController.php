@@ -506,4 +506,33 @@ class AuthController extends Controller
             return response()->json(['error' => true, 'message' => 'User not found'], 404);
         }
     }
+
+    /**
+     * Delete a user (admin only). Uses soft delete.
+     */
+    public function deleteUser($id)
+    {
+        try {
+            $user = User::findOrFail($id);
+
+            // Prevent deleting yourself
+            if ($user->id === auth()->id()) {
+                return response()->json(['error' => true, 'message' => 'You cannot delete your own account'], 422);
+            }
+
+            // Prevent deleting super_admin users
+            if ($user->user_type === 'super_admin') {
+                return response()->json(['error' => true, 'message' => 'Cannot delete a super admin account'], 422);
+            }
+
+            $user->delete(); // soft delete
+
+            return response()->json([
+                'message' => 'User deleted successfully',
+                'data' => ['id' => (string) $user->id],
+            ]);
+        } catch (ModelNotFoundException $e) {
+            return response()->json(['error' => true, 'message' => 'User not found'], 404);
+        }
+    }
 }
