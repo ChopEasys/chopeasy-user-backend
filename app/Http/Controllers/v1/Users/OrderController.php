@@ -1988,7 +1988,7 @@ public function availablePickups(Request $request)
         ], $status);
     }
 
-    public function acceptDelivery(Request $request, $orderId, AutomaticPayoutService $automaticPayoutService, AgentCommissionService $agentCommissionService)
+    public function acceptDelivery(Request $request, $orderId)
 {
     $agent = $request->user();
 
@@ -2030,9 +2030,10 @@ public function availablePickups(Request $request)
                 throw new \RuntimeException('TIER_LIMIT');
             }
 
+            // Only claim the order — do NOT change status yet.
+            // Status stays 'ready' until agent confirms pickup at vendor.
             $order->update([
                 'accepted_by' => $agent->id,
-                'status' => 'ongoing',
             ]);
 
             return $order;
@@ -2050,6 +2051,38 @@ public function availablePickups(Request $request)
         return $this->failure('Order already taken or not available.', 400);
     }
 
+    return $this->success([
+        'order_id' => $order->id,
+        'status' => $order->status,
+    ], 'Delivery accepted. Head to the vendor to verify and confirm pickup.');
+}
+
+/**
+ * Agent confirms pickup at vendor — verifies items are correct.
+ * This triggers vendor payout and changes status to 'ongoing' (Out for delivery).
+ */
+public function confirmPickup(Request $request, $orderId, AutomaticPayoutService $automaticPayoutService, AgentCommissionService $agentCommissionService)
+{
+    $agent = $request->user();
+
+    if ($agent->user_type !== 'agent') {
+        return response()->json(['error' => 'Unauthorized'], 403);
+    }
+
+    $order = Order::with(['items.vendorOrders.vendor', 'user'])
+        ->where('id', $orderId)
+        ->where('accepted_by', $agent->id)
+        ->where('status', 'ready')
+        ->first();
+
+    if (!$order) {
+        return $this->failure('Order not found or not assigned to you.', 404);
+    }
+
+    // Change status to ongoing (Out for delivery)
+    $order->update(['status' => 'ongoing']);
+
+    // Now pay the vendor
     $vendorPayouts = $automaticPayoutService->processVendorPayoutsForOrder(
         $order->fresh(['items.vendorOrders.vendor', 'user'])
     );
@@ -2061,9 +2094,9 @@ public function availablePickups(Request $request)
 
     return $this->success([
         'order_id' => $order->id,
-        'status' => $order->status,
+        'status' => 'ongoing',
         'vendor_payouts' => $vendorPayouts,
-    ], 'Delivery accepted successfully');
+    ], 'Pickup confirmed. Order is now out for delivery.');
 }
 
 // public function acceptDelivery(Request $request, $orderId, AutomaticPayoutService $automaticPayoutService, AgentCommissionService $agentCommissionService)

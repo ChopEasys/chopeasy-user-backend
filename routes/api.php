@@ -137,6 +137,7 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
          Route::prefix('agent')->group(function () {
             Route::get('available-pickups', [OrderController::class, 'availablePickups']);
             Route::post('accept-delivery/{orderId}', [OrderController::class, 'acceptDelivery']);
+            Route::post('confirm-pickup/{orderId}', [OrderController::class, 'confirmPickup']);
             Route::get('my-pickups', [OrderController::class, 'myPickups']);
             Route::get('payout-history', [PayoutHistoryController::class, 'riderHistory']);
         });
