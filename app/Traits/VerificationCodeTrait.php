@@ -200,7 +200,7 @@ trait VerificationCodeTrait
     ];
 
     // Send email based on user's role
-    if ($user->hasRole('familymember')) {
+    if ($user->user_type === 'familymember') {
       Mail::to($user->email)->send(new RelativeCreatePasswordMail($emailData));
     } else {
       Mail::to($user->email)->send(new CreatePasswordMail($emailData));

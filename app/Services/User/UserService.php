@@ -193,14 +193,7 @@ class UserService
             // Log::error('OTP Email Send Failed: ' . $e->getMessage());
         }
 
-        // Assign role
-        if ($data['user_type'] === 'rider') {
-            $user->assignRole('Customer');
-        } elseif ($data['user_type'] === 'vendor') {
-            $user->assignRole('Customer');
-        } else {
-            $user->assignRole('Customer');
-        }
+        // Role is determined by user_type column; no separate role assignment needed
 
         return $user;
     }
@@ -270,11 +263,8 @@ class UserService
             'ip_address' => $request->ip(),
         ]);
 
-        try {
-            $roles = $user->getRoleNames()->toArray();
-        } catch (\Exception $e) {
-            $roles = [];
-        }
+        // Spatie HasRoles trait removed; user_type is the role now
+        $roles = [$user->user_type];
 
         $responseData = [
             'token' => $token,

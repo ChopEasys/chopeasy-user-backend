@@ -22,12 +22,13 @@ class RoleMiddleware
         }
 
         // Super Admin has full access
-        if ($user->hasRole('Super Admin')) {
+        if ($user->user_type === 'super_admin') {
             return $next($request);
         }
 
-        // Check if user has any of the required roles
-        if ($user->hasAnyRole($roles)) {
+        // Check if user's user_type matches any of the required roles
+        $allowedTypes = array_map(fn($r) => strtolower(str_replace(' ', '_', $r)), $roles);
+        if (in_array($user->user_type, $allowedTypes)) {
             return $next($request);
         }
 
