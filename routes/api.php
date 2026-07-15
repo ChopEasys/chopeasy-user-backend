@@ -18,6 +18,7 @@ use App\Http\Controllers\v1\Users\WishlistController;
 use App\Http\Controllers\v1\Users\PostalCodeController;
 use App\Http\Controllers\v1\Users\TopRatedController;
 use App\Http\Controllers\v1\Users\NotificationController;
+use App\Http\Controllers\v1\Users\PriceSyncController;
 use App\Http\Controllers\v1\Users\PushSubscriptionController;
 use App\Http\Controllers\v1\Users\BankAccountController;
 use App\Http\Controllers\v1\Orders\OrderPricingController;
@@ -279,6 +280,7 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
     Route::delete('/cart/remove', [CartController::class, 'removeFromCart']);
     Route::post('/cart/add-multiple', [CartController::class, 'addMultipleToCart']);
     Route::delete('/cart/delete-multiple', [CartController::class, 'deleteMultipleFromCart']);
+    Route::post('/cart/price-sync', [PriceSyncController::class, 'sync']);
     // routes/api.php
     Route::get('/public/vendor/{vendorId}/products', [VendorProductController::class, 'publicVendorProducts']);
     Route::get('/suggest-address', [PostalCodeController::class, 'suggestAddress']);
