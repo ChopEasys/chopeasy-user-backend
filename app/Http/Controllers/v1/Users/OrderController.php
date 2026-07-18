@@ -1888,9 +1888,10 @@ public function availablePickups(Request $request)
     $orders = Order::with(['items.vendorOrders.vendor', 'user', 'vendorOrders.vendor'])
         ->where('status', 'ready')
         ->paidForFulfillment()
-        ->where(function ($q) use ($agent) {
-            $q->whereNull('accepted_by')->orWhere('accepted_by', $agent->id);
-        })
+        // ->where(function ($q) use ($agent) {
+        //     $q->whereNull('accepted_by')->orWhere('accepted_by', $agent->id);
+        // })
+        ->whereNull('accepted_by')
         ->get()
         ->filter(function ($order) use ($agentTier, $agentLat, $agentLng, $radiusKm) {
             if (!DeliveryTier::tierCanHandle($agentTier, $order->fulfillmentAmount())) {
@@ -2163,60 +2164,117 @@ public function confirmPickup(Request $request, $orderId, AutomaticPayoutService
 //     'vendor_payouts' => $vendorPayouts,
 // ], 'Delivery accepted successfully');
 // }
-    public function myPickups(Request $request)
-    {
-        $rider = $request->user();
+//     public function myPickups(Request $request)
+//     {
+//         $rider = $request->user();
 
-       if ($rider->user_type !== 'agent') {  
+//        if ($rider->user_type !== 'agent') {  
+//         return response()->json(['error' => 'Unauthorized'], 403);
+//      }
+
+//         $orders = Order::with(['items.vendorOrders.vendor', 'user']) // include vendor + customer
+//             ->where('accepted_by', $rider->id)
+//             ->paidForFulfillment()
+//             ->whereIn('status', ['ongoing', 'delivered'])
+//             ->get()
+//             ->map(function ($order) {
+//                 $vendorGroups = $this->buildVendorPickupGroups($order);
+//                 $stopCount = count($vendorGroups);
+//                 $first = $vendorGroups[0] ?? null;
+
+//                 $summaryVendorName = $stopCount > 1
+//                     ? 'Multiple stores ('.$stopCount.' pickups)'
+//                     : ($first['vendor_name'] ?? null);
+
+//                 return [
+//                     'id' => $order->id,
+//                     'order_number' => $order->order_number,
+//                     'multi_vendor' => $stopCount > 1,
+//                     'vendor_stop_count' => $stopCount,
+
+//                     'vendor_name' => $summaryVendorName,
+//                     'vendor_phone' => $stopCount === 1 ? ($first['vendor_phone'] ?? null) : null,
+//                     'vendor_address' => $stopCount === 1 ? ($first['pickup_address'] ?? null) : null,
+//                     'pickup_address' => $stopCount === 1 ? ($first['pickup_address'] ?? null) : null,
+//                     'pickup_latitude' => $first['pickup_latitude'] ?? null,
+//                     'pickup_longitude' => $first['pickup_longitude'] ?? null,
+
+//                     'customer_name' => $order->user->fullname ?? null,
+//                     'customer_phone' => $order->user->phoneno ?? null,
+//                     'customer_address' => $order->delivery_address,
+//                     'delivery_latitude' => $order->delivery_latitude,
+//                     'delivery_longitude' => $order->delivery_longitude,
+
+//                     'status' => $order->status,
+//                     'accepted_by' => $order->accepted_by,
+
+//                     'items' => $order->items->map(fn ($item) => $this->formatOrderItemRowWithVendor($item))->values(),
+//                     'vendor_pickup_stops' => $vendorGroups,
+//                 ];
+//             });
+
+//       return response()->json([
+//     'error' => false,
+//     'message' => 'My pickups fetched successfully',
+//     'data' => $orders,
+// ]);
+//     }
+
+public function myPickups(Request $request)
+{
+    $rider = $request->user();
+
+    if ($rider->user_type !== 'agent') {
         return response()->json(['error' => 'Unauthorized'], 403);
     }
 
-        $orders = Order::with(['items.vendorOrders.vendor', 'user']) // include vendor + customer
-            ->where('accepted_by', $rider->id)
-            ->paidForFulfillment()
-            ->whereIn('status', ['ongoing', 'delivered'])
-            ->get()
-            ->map(function ($order) {
-                $vendorGroups = $this->buildVendorPickupGroups($order);
-                $stopCount = count($vendorGroups);
-                $first = $vendorGroups[0] ?? null;
+    $orders = Order::with(['items.vendorOrders.vendor', 'user'])
+        ->where('accepted_by', $rider->id)
+        ->paidForFulfillment()
+        ->whereIn('status', ['ready', 'ongoing', 'delivered'])
+        ->get()
+        ->map(function ($order) {
+            $vendorGroups = $this->buildVendorPickupGroups($order);
+            $stopCount = count($vendorGroups);
+            $first = $vendorGroups[0] ?? null;
 
-                $summaryVendorName = $stopCount > 1
-                    ? 'Multiple stores ('.$stopCount.' pickups)'
-                    : ($first['vendor_name'] ?? null);
+            $summaryVendorName = $stopCount > 1
+                ? 'Multiple stores ('.$stopCount.' pickups)'
+                : ($first['vendor_name'] ?? null);
 
-                return [
-                    'id' => $order->id,
-                    'order_number' => $order->order_number,
-                    'multi_vendor' => $stopCount > 1,
-                    'vendor_stop_count' => $stopCount,
+            return [
+                'id' => $order->id,
+                'order_number' => $order->order_number,
+                'multi_vendor' => $stopCount > 1,
+                'vendor_stop_count' => $stopCount,
 
-                    'vendor_name' => $summaryVendorName,
-                    'vendor_phone' => $stopCount === 1 ? ($first['vendor_phone'] ?? null) : null,
-                    'vendor_address' => $stopCount === 1 ? ($first['pickup_address'] ?? null) : null,
-                    'pickup_address' => $stopCount === 1 ? ($first['pickup_address'] ?? null) : null,
-                    'pickup_latitude' => $first['pickup_latitude'] ?? null,
-                    'pickup_longitude' => $first['pickup_longitude'] ?? null,
+                'vendor_name' => $summaryVendorName,
+                'vendor_phone' => $stopCount === 1 ? ($first['vendor_phone'] ?? null) : null,
+                'vendor_address' => $stopCount === 1 ? ($first['pickup_address'] ?? null) : null,
+                'pickup_address' => $stopCount === 1 ? ($first['pickup_address'] ?? null) : null,
+                'pickup_latitude' => $first['pickup_latitude'] ?? null,
+                'pickup_longitude' => $first['pickup_longitude'] ?? null,
 
-                    'customer_name' => $order->user->fullname ?? null,
-                    'customer_phone' => $order->user->phoneno ?? null,
-                    'customer_address' => $order->delivery_address,
-                    'delivery_latitude' => $order->delivery_latitude,
-                    'delivery_longitude' => $order->delivery_longitude,
+                'customer_name' => $order->user->fullname ?? null,
+                'customer_phone' => $order->user->phoneno ?? null,
+                'customer_address' => $order->delivery_address,
+                'delivery_latitude' => $order->delivery_latitude,
+                'delivery_longitude' => $order->delivery_longitude,
 
-                    'status' => $order->status,
-                    'accepted_by' => $order->accepted_by,
+                'status' => $order->status,
+                'accepted_by' => $order->accepted_by,
+                'awaiting_pickup_confirmation' => $order->status === 'ready',
 
-                    'items' => $order->items->map(fn ($item) => $this->formatOrderItemRowWithVendor($item))->values(),
-                    'vendor_pickup_stops' => $vendorGroups,
-                ];
-            });
+                'items' => $order->items->map(fn ($item) => $this->formatOrderItemRowWithVendor($item))->values(),
+                'vendor_pickup_stops' => $vendorGroups,
+            ];
+        });
 
-      return response()->json([
-    'error' => false,
-    'message' => 'My pickups fetched successfully',
-    'data' => $orders,
-]);
-    }
+    return response()->json([
+        'error' => false,
+        'message' => 'My pickups fetched successfully',
+        'data' => $orders,
+    ]);
+}
 }
 
