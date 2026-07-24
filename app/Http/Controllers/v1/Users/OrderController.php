@@ -964,8 +964,13 @@ class OrderController extends Controller
             if ($order->accepted_by) {
                 $agent = User::find($order->accepted_by);
                 if ($agent && $agent->user_type === 'agent') {
-                    $deliveryFee = $order->rider_payout ?? $order->rider_payout ?? 0;
-                    if ($deliveryFee > 0) {
+                    // Guard: only pay if not already paid for this order
+                    $alreadyPaid = AgentEarning::where('order_id', $order->id)
+                        ->where('earning_type', 'delivery_fee')
+                        ->exists();
+
+                    $deliveryFee = (float) ($order->rider_payout ?? 0);
+                    if ($deliveryFee > 0 && !$alreadyPaid) {
                         $agent->increment('main_wallet', $deliveryFee);
 
                         // Create earning record for the agent
@@ -975,7 +980,6 @@ class OrderController extends Controller
                             'order_amount' => $order->total_amount,
                             'earning_type' => 'delivery_fee',
                             'order_id' => $order->id,
-                            'earning_type' => 'delivery_fee',
                             'order_number' => $order->order_number,
                             'status' => 'completed',
                         ]);
