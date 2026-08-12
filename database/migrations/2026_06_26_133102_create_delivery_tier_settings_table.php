@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('delivery_tier_settings')) {
+            return;
+        }
+
         Schema::create('delivery_tier_settings', function (Blueprint $table) {
             $table->id();
             $table->integer('tier')->unique(); // 1, 2, 3, etc.

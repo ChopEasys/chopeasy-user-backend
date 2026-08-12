@@ -12,8 +12,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('orders', function (Blueprint $table) {
-            $table->string('delivery_cycle')->nullable()->after('status');
-            $table->date('expected_delivery_date')->nullable()->after('delivery_cycle');
+            if (!Schema::hasColumn('orders', 'delivery_cycle')) {
+                $table->string('delivery_cycle')->nullable()->after('status');
+            }
+            if (!Schema::hasColumn('orders', 'expected_delivery_date')) {
+                $table->date('expected_delivery_date')->nullable()->after('delivery_cycle');
+            }
         });
     }
 

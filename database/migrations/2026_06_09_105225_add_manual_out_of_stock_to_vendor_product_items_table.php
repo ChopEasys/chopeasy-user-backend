@@ -11,9 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('vendor_product_items', function (Blueprint $table) {
-            $table->boolean('manual_out_of_stock')->default(false)->after('quantity');
-        });
+        if (!Schema::hasColumn('vendor_product_items', 'manual_out_of_stock')) {
+            Schema::table('vendor_product_items', function (Blueprint $table) {
+                $table->boolean('manual_out_of_stock')->default(false)->after('quantity');
+            });
+        }
     }
 
     /**

@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasColumn('agent_withdrawals', 'recipient_code')) {
+            return;
+        }
+
         Schema::table('agent_withdrawals', function (Blueprint $table) {
             $table->string('recipient_code')->nullable()->after('account_name');
             $table->string('transfer_code')->nullable()->after('recipient_code');

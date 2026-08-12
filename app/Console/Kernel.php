@@ -13,6 +13,7 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\ClearOldReadNotifications::class,
         \App\Console\Commands\UpdateTrendingProducts::class,
         \App\Console\Commands\DeductionReminderCommand::class,
+        \App\Console\Commands\EvaluateAmbassadorRewardsCommand::class,
     ];
 
     /**
@@ -31,6 +32,7 @@ class Kernel extends ConsoleKernel
         $schedule->command('model:prune')->daily();
         $schedule->command('orders:process-recurring')->hourly();
         $schedule->command('push:deduction-reminders')->everyMinute();
+        $schedule->command('ambassador:evaluate-rewards')->daily();
     }
 
     /**

@@ -23,6 +23,7 @@ use App\Http\Controllers\v1\Users\PushSubscriptionController;
 use App\Http\Controllers\v1\Users\BankAccountController;
 use App\Http\Controllers\v1\Orders\OrderPricingController;
 use App\Http\Controllers\v1\Agent\AgentController;
+use App\Http\Controllers\v1\Agent\AmbassadorController;
 use App\Http\Controllers\Admin\PricingConfigController;
 use App\Http\Controllers\Admin\WeightTierController;
 use App\Http\Controllers\Admin\RiderPayoutRuleController;
@@ -39,6 +40,7 @@ use App\Http\Controllers\Admin\SlideController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\PermissionController;
 use App\Http\Controllers\Admin\AdminUserController;
+use App\Http\Controllers\Admin\AdminAmbassadorController;
 use App\Http\Controllers\Admin\AuditLogController;
 use Illuminate\Support\Facades\Route;
 
@@ -74,6 +76,23 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
             Route::post('bank-details/resolve', [AgentController::class, 'resolveBankDetails']);
             Route::post('request-withdrawal', [AgentController::class, 'requestWithdrawal']);
             Route::post('apply-delivery-agent', [AgentController::class, 'applyToBecomeDeliveryAgent']);
+        });
+
+        Route::prefix('agent/ambassador')->group(function () {
+            Route::get('eligibility', [AmbassadorController::class, 'eligibility']);
+            Route::post('request-promotion', [AmbassadorController::class, 'requestPromotion']);
+            Route::get('dashboard', [AmbassadorController::class, 'dashboard']);
+            Route::get('territory', [AmbassadorController::class, 'territory']);
+            Route::get('reward-status', [AmbassadorController::class, 'rewardStatus']);
+        });
+
+        // Security Wallet
+        Route::prefix('agent/security-wallet')->group(function () {
+            Route::get('info', [AgentController::class, 'securityWalletInfo']);
+            Route::post('transfer', [AgentController::class, 'transferToSecurityWallet']);
+            Route::post('fund', [AgentController::class, 'fundSecurityWallet']);
+            Route::get('verify-payment', [AgentController::class, 'verifySecurityWalletPayment']);
+            Route::post('verify-payment', [AgentController::class, 'verifySecurityWalletPayment']);
         });
 
         Route::prefix('push')->group(function () {
@@ -261,6 +280,19 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
 
         // RBAC - Audit Logs
         Route::get('/admin/audit-logs', [AuditLogController::class, 'index'])->middleware('permission:view_audit_log');
+
+        // Admin Ambassador Management
+        Route::prefix('admin/ambassadors')->group(function () {
+            Route::get('/', [AdminAmbassadorController::class, 'index']);
+            Route::get('/promotion-requests', [AdminAmbassadorController::class, 'promotionRequests']);
+            Route::post('/promotion-requests/{id}/approve', [AdminAmbassadorController::class, 'approvePromotion']);
+            Route::post('/promotion-requests/{id}/reject', [AdminAmbassadorController::class, 'rejectPromotion']);
+            Route::get('/territories', [AdminAmbassadorController::class, 'territories']);
+            Route::post('/territories', [AdminAmbassadorController::class, 'createTerritory']);
+            Route::post('/{id}/assign-territory', [AdminAmbassadorController::class, 'assignTerritory']);
+            Route::get('/{id}/network', [AdminAmbassadorController::class, 'networkHierarchy']);
+            Route::get('/rewards', [AdminAmbassadorController::class, 'rewards']);
+        });
     });
 
     // Public routes

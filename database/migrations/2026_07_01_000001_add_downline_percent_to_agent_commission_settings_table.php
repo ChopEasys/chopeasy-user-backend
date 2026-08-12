@@ -9,6 +9,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasColumn('agent_commission_settings', 'downline_percent')) {
+            return;
+        }
+
         Schema::table('agent_commission_settings', function (Blueprint $table) {
             $table->decimal('downline_percent', 5, 2)->default(15.00)->after('agent_percent');
         });

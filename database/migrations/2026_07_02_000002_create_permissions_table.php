@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('permissions')) {
+            return;
+        }
+
         // Drop existing Spatie permissions table if it exists to replace with RBAC permissions schema
         Schema::dropIfExists('model_has_permissions');
         Schema::dropIfExists('permissions');

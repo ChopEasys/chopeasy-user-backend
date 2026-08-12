@@ -10,6 +10,7 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Safe to re-run — just ensures the enum includes admin types
         DB::statement("ALTER TABLE users MODIFY COLUMN user_type ENUM('customer', 'vendor', 'rider', 'agent', 'admin', 'super_admin') NOT NULL");
     }
 

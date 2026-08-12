@@ -56,6 +56,9 @@ class User extends Authenticatable implements JWTSubject
         'is_delivery_agent',
         'delivery_agent_application_status',
         'delivery_agent_tier',
+        'ambassador_badge_tier',
+        'ambassador_promoted_at',
+        'ambassador_territory_id',
     ];
 
     protected $hidden = ['password', 'remember_token', 'email_otp'];
@@ -70,6 +73,7 @@ class User extends Authenticatable implements JWTSubject
         'onboarding_completed' => 'boolean',
         'two_fa' => 'boolean',
         'is_delivery_agent' => 'boolean',
+        'ambassador_promoted_at' => 'datetime',
     ];
 
     // public function sendPasswordResetNotification($token)
@@ -208,5 +212,47 @@ public function getEffectivePermissions(): array
 public function isSuperAdmin(): bool
 {
     return $this->user_type === 'super_admin';
+}
+
+/**
+ * Get the ambassador territory assigned to this user.
+ */
+public function ambassadorTerritory()
+{
+    return $this->belongsTo(AmbassadorTerritory::class, 'ambassador_territory_id');
+}
+
+/**
+ * Get all territory assignments for this ambassador.
+ */
+public function territoryAssignments()
+{
+    return $this->hasMany(AmbassadorTerritoryAssignment::class, 'ambassador_id');
+}
+
+/**
+ * Get all ambassador promotion requests for this agent.
+ */
+public function ambassadorPromotionRequests()
+{
+    return $this->hasMany(AmbassadorPromotionRequest::class, 'agent_id');
+}
+
+/**
+ * Get all annual rewards for this ambassador.
+ */
+public function ambassadorRewards()
+{
+    return $this->hasMany(AmbassadorAnnualReward::class, 'ambassador_id');
+}
+
+/**
+ * Get the effective tier (highest of badge tier and current delivery tier).
+ */
+public function getEffectiveTierAttribute()
+{
+    $badgeTier = (int) ($this->ambassador_badge_tier ?? 0);
+    $deliveryTier = (int) ($this->delivery_tier ?? 1);
+    return max($badgeTier, $deliveryTier);
 }
 }

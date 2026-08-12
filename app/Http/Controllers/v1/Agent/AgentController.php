@@ -68,23 +68,37 @@ class AgentController extends Controller
             $tierNumber = $matches[1] ?? 1;
         }
 
+        // Build user data array
+        $userData = [
+            'id' => $user->id,
+            'fullname' => $user->fullname,
+            'email' => $user->email,
+            'phoneno' => $user->phoneno,
+            'address' => $user->address,
+            'latitude' => $user->latitude,
+            'longitude' => $user->longitude,
+            'user_type' => $user->user_type,
+            'is_delivery_agent' => (bool) $user->is_delivery_agent,
+            'delivery_agent_application_status' => $user->delivery_agent_application_status,
+            'delivery_tier' => $tierNumber,
+            'delivery_tier_name' => DeliveryTier::tierName($tierNumber),
+            'tier_upgrade_status' => $user->tier_upgrade_status,
+        ];
+
+        // Add ambassador info for Tier 4+ agents
+        if ($user->ambassador_badge_tier && $user->ambassador_badge_tier >= 4) {
+            $userData['ambassador_badge_tier'] = (int) $user->ambassador_badge_tier;
+            $userData['ambassador_badge_name'] = DeliveryTier::tierName($user->ambassador_badge_tier);
+            $userData['territory_name'] = $user->ambassadorTerritory?->name ?? null;
+            $userData['ambassador_promoted_at'] = $user->ambassador_promoted_at
+                ? Carbon::parse($user->ambassador_promoted_at)->toIso8601String()
+                : null;
+        }
+
         return JsonResponser::send(false, 'Dashboard loaded.', [
-            'user' => [
-                'id' => $user->id,
-                'fullname' => $user->fullname,
-                'email' => $user->email,
-                'phoneno' => $user->phoneno,
-                'address' => $user->address,
-                'latitude' => $user->latitude,
-                'longitude' => $user->longitude,
-                'user_type' => $user->user_type,
-                'is_delivery_agent' => (bool) $user->is_delivery_agent,
-                'delivery_agent_application_status' => $user->delivery_agent_application_status,
-                'delivery_tier' => $tierNumber,
-                'delivery_tier_name' => 'Tier ' . $tierNumber,
-                'tier_upgrade_status' => $user->tier_upgrade_status,
-            ],
+            'user' => $userData,
             'wallet_balance' => (float) $user->main_wallet,
+            'security_wallet_balance' => (float) ($user->security_wallet_deposit ?? 0),
             'commission_settings' => [
                 'customer_percent' => (float) $settings->customer_percent,
                 'vendor_percent' => (float) $settings->vendor_percent,
@@ -704,150 +718,414 @@ class AgentController extends Controller
             return JsonResponser::send(true, 'Failed to submit application. Please try again.', null, 500);
         }
     }
-             public function tierUpgradeEligibility(Request $request)
-{
-    $user = $request->user();
- 
-    if ($user->user_type !== 'agent') {
-        return JsonResponser::send(true, 'Access denied. Agent only.', null, 403);
-    }
- 
-    // Extract current tier from delivery_agent_tier field (format: "tier_1", "tier_2")
-    $currentTier = 1;
-    if ($user->delivery_agent_tier) {
-        preg_match('/tier_(\d+)/', $user->delivery_agent_tier, $matches);
-        $currentTier = $matches[1] ?? 1;
-    }
- 
-    $completedDeliveries = Order::where('accepted_by', $user->id)
-        ->where('status', 'delivered')
-        ->count();
- 
-    // Get tier configurations from database
-    $currentTierConfig = DeliveryTierSetting::getForTier($currentTier);
-    $nextTierConfig = DeliveryTierSetting::getNextTier($currentTier);
- 
-    $requiredDeliveries = $nextTierConfig?->min_completed_deliveries ?? 0;
-    $minDeposit = $nextTierConfig?->min_security_deposit ?? 0;
-    $maxDeposit = $nextTierConfig?->max_security_deposit ?? 0;
-    $nextTierMaxAmount = $nextTierConfig?->max_order_amount ?? 0;
- 
-    return JsonResponser::send(false, 'Eligibility loaded.', [
-        'is_delivery_agent' => (bool) $user->is_delivery_agent,
-        'current_tier' => $currentTier,
-        'current_tier_name' => $currentTierConfig?->tier_name ?? "Tier {$currentTier}",
-        'current_tier_max_amount' => (float) ($currentTierConfig?->max_order_amount ?? 0),
-        'next_tier' => $nextTierConfig?->tier ?? null,
-        'next_tier_name' => $nextTierConfig?->tier_name ?? null,
-        'next_tier_max_amount' => (float) $nextTierMaxAmount,
-        'completed_deliveries' => $completedDeliveries,
-        'required_deliveries' => $requiredDeliveries,
-        'eligible_for_upgrade' => $user->is_delivery_agent
-            && $nextTierConfig
-            && $completedDeliveries >= $requiredDeliveries,
-        'tier_upgrade_status' => $user->tier_upgrade_status,
-        'security_deposit_min' => (float) $minDeposit,
-        'security_deposit_max' => (float) $maxDeposit,
-    ], 200);
-}
- 
-/**
- * 4. REPLACE the entire requestTierUpgrade() method with:
- */
- 
-public function requestTierUpgrade(Request $request)
-{
-    $user = $request->user();
- 
-    if ($user->user_type !== 'agent') {
-        return JsonResponser::send(true, 'Access denied. Agent only.', null, 403);
-    }
- 
-    if (!$user->is_delivery_agent) {
-        return JsonResponser::send(true, 'You must be an approved delivery agent first.', null, 403);
-    }
- 
-    // Extract current tier
-    $currentTier = 1;
-    if ($user->delivery_agent_tier) {
-        preg_match('/tier_(\d+)/', $user->delivery_agent_tier, $matches);
-        $currentTier = $matches[1] ?? 1;
-    }
- 
-    $nextTierConfig = DeliveryTierSetting::getNextTier($currentTier);
-    if (!$nextTierConfig) {
-        return JsonResponser::send(true, 'No higher tier available for upgrade.', null, 422);
-    }
- 
-    if ($user->tier_upgrade_status === 'pending') {
-        return JsonResponser::send(true, 'You already have a tier upgrade request pending review.', null, 400);
-    }
- 
-    $completedDeliveries = Order::where('accepted_by', $user->id)
-        ->where('status', 'delivered')
-        ->count();
- 
-    if ($completedDeliveries < $nextTierConfig->min_completed_deliveries) {
-        return JsonResponser::send(true, sprintf(
-            'You need at least %d completed deliveries to request upgrade to %s. You currently have %d.',
-            $nextTierConfig->min_completed_deliveries,
-            $nextTierConfig->tier_name,
-            $completedDeliveries
-        ), [
+    public function tierUpgradeEligibility(Request $request)
+    {
+        $user = $request->user();
+
+        if ($user->user_type !== 'agent') {
+            return JsonResponser::send(true, 'Access denied. Agent only.', null, 403);
+        }
+
+        // Extract current tier from delivery_agent_tier field (format: "tier_1", "tier_2")
+        $currentTier = 1;
+        if ($user->delivery_agent_tier) {
+            preg_match('/tier_(\d+)/', $user->delivery_agent_tier, $matches);
+            $currentTier = (int) ($matches[1] ?? 1);
+        }
+
+        // Tier 3+ agents must use the ambassador promotion system
+        if ($currentTier >= 3) {
+            return JsonResponser::send(false, 'Ambassador promotion info loaded.', [
+                'is_delivery_agent' => (bool) $user->is_delivery_agent,
+                'current_tier' => $currentTier,
+                'current_tier_name' => DeliveryTier::tierName($currentTier),
+                'upgrade_path' => 'ambassador_promotion',
+                'ambassador_promotion_available' => true,
+                'ambassador_promotion_message' => 'Tier 3+ agents must use the ambassador promotion system. Visit /agent/ambassador/eligibility to check your eligibility.',
+                'tier_upgrade_status' => $user->tier_upgrade_status,
+            ], 200);
+        }
+
+        $completedDeliveries = Order::where('accepted_by', $user->id)
+            ->where('status', 'delivered')
+            ->count();
+
+        // Get tier configurations from database
+        $currentTierConfig = DeliveryTierSetting::getForTier($currentTier);
+        $nextTierConfig = DeliveryTierSetting::getNextTier($currentTier);
+
+        $requiredDeliveries = $nextTierConfig?->min_completed_deliveries ?? 0;
+        $minDeposit = $nextTierConfig?->min_security_deposit ?? 0;
+        $maxDeposit = $nextTierConfig?->max_security_deposit ?? 0;
+        $nextTierMaxAmount = $nextTierConfig?->max_order_amount ?? 0;
+
+        $nextTier = $nextTierConfig?->tier ?? null;
+
+        $responseData = [
+            'is_delivery_agent' => (bool) $user->is_delivery_agent,
+            'current_tier' => $currentTier,
+            'current_tier_name' => DeliveryTier::tierName($currentTier),
+            'current_tier_max_amount' => (float) ($currentTierConfig?->max_order_amount ?? 0),
+            'next_tier' => $nextTier,
+            'next_tier_name' => $nextTier ? DeliveryTier::tierName((int) $nextTier) : null,
+            'next_tier_max_amount' => (float) $nextTierMaxAmount,
             'completed_deliveries' => $completedDeliveries,
-            'required_deliveries' => $nextTierConfig->min_completed_deliveries,
-        ], 422);
+            'required_deliveries' => $requiredDeliveries,
+            'eligible_for_upgrade' => $user->is_delivery_agent
+                && $nextTierConfig
+                && $completedDeliveries >= $requiredDeliveries,
+            'tier_upgrade_status' => $user->tier_upgrade_status,
+            'security_deposit_min' => (float) $minDeposit,
+            'security_deposit_max' => (float) $maxDeposit,
+        ];
+
+        return JsonResponser::send(false, 'Eligibility loaded.', $responseData, 200);
     }
  
-    $validator = Validator::make($request->all(), [
-        'security_deposit_amount' => [
-            'required',
-            'numeric',
-            'min:' . $nextTierConfig->min_security_deposit,
-            'max:' . $nextTierConfig->max_security_deposit,
-        ],
-    ]);
- 
-    if ($validator->fails()) {
-        return JsonResponser::send(true, $validator->errors()->first(), $validator->errors(), 422);
-    }
- 
-    $securityDepositAmount = round((float) $validator->validated()['security_deposit_amount'], 2);
- 
-    if ((float) $user->main_wallet < $securityDepositAmount) {
-        return JsonResponser::send(true, 'Insufficient wallet balance to cover the security deposit.', null, 422);
-    }
- 
-    try {
-        DB::transaction(function () use ($user, $securityDepositAmount, $completedDeliveries) {
-            $lockedUser = User::where('id', $user->id)->lockForUpdate()->first();
- 
-            if ((float) $lockedUser->main_wallet < $securityDepositAmount) {
-                throw new \RuntimeException('INSUFFICIENT');
-            }
- 
-            $lockedUser->decrement('main_wallet', $securityDepositAmount);
-            $lockedUser->update([
-                'security_wallet_deposit' => $securityDepositAmount,
-                'tier_upgrade_status' => 'pending',
-                'tier_upgrade_requested_at' => now(),
-                'tier_upgrade_completed_deliveries_snapshot' => $completedDeliveries,
-            ]);
-        });
-    } catch (\RuntimeException $e) {
-        if ($e->getMessage() === 'INSUFFICIENT') {
+    /**
+     * Request a tier upgrade (Tier 1→2 or 2→3 only).
+     * Tier 3+ agents must use the ambassador promotion system.
+     */
+    public function requestTierUpgrade(Request $request)
+    {
+        $user = $request->user();
+
+        if ($user->user_type !== 'agent') {
+            return JsonResponser::send(true, 'Access denied. Agent only.', null, 403);
+        }
+
+        if (!$user->is_delivery_agent) {
+            return JsonResponser::send(true, 'You must be an approved delivery agent first.', null, 403);
+        }
+
+        // Extract current tier
+        $currentTier = 1;
+        if ($user->delivery_agent_tier) {
+            preg_match('/tier_(\d+)/', $user->delivery_agent_tier, $matches);
+            $currentTier = (int) ($matches[1] ?? 1);
+        }
+
+        // Tier 3+ agents must use the ambassador promotion system
+        if ($currentTier >= 3) {
+            return JsonResponser::send(true, 'Tier 3+ agents must use the ambassador promotion system. Visit /agent/ambassador/eligibility to check your eligibility.', null, 422);
+        }
+
+        $nextTierConfig = DeliveryTierSetting::getNextTier($currentTier);
+        if (!$nextTierConfig) {
+            return JsonResponser::send(true, 'No higher tier available for upgrade.', null, 422);
+        }
+
+        if ($user->tier_upgrade_status === 'pending') {
+            return JsonResponser::send(true, 'You already have a tier upgrade request pending review.', null, 400);
+        }
+
+        $completedDeliveries = Order::where('accepted_by', $user->id)
+            ->where('status', 'delivered')
+            ->count();
+
+        if ($completedDeliveries < $nextTierConfig->min_completed_deliveries) {
+            return JsonResponser::send(true, sprintf(
+                'You need at least %d completed deliveries to request upgrade to %s. You currently have %d.',
+                $nextTierConfig->min_completed_deliveries,
+                $nextTierConfig->tier_name,
+                $completedDeliveries
+            ), [
+                'completed_deliveries' => $completedDeliveries,
+                'required_deliveries' => $nextTierConfig->min_completed_deliveries,
+            ], 422);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'security_deposit_amount' => [
+                'required',
+                'numeric',
+                'min:' . $nextTierConfig->min_security_deposit,
+                'max:' . $nextTierConfig->max_security_deposit,
+            ],
+        ]);
+
+        if ($validator->fails()) {
+            return JsonResponser::send(true, $validator->errors()->first(), $validator->errors(), 422);
+        }
+
+        $securityDepositAmount = round((float) $validator->validated()['security_deposit_amount'], 2);
+
+        if ((float) $user->main_wallet < $securityDepositAmount) {
             return JsonResponser::send(true, 'Insufficient wallet balance to cover the security deposit.', null, 422);
         }
- 
-        throw $e;
-    } catch (\Exception $e) {
-        return JsonResponser::send(true, 'Failed to submit tier upgrade request. Please try again.', null, 500);
+
+        try {
+            DB::transaction(function () use ($user, $securityDepositAmount, $completedDeliveries) {
+                $lockedUser = User::where('id', $user->id)->lockForUpdate()->first();
+
+                if ((float) $lockedUser->main_wallet < $securityDepositAmount) {
+                    throw new \RuntimeException('INSUFFICIENT');
+                }
+
+                $lockedUser->decrement('main_wallet', $securityDepositAmount);
+                $lockedUser->update([
+                    'security_wallet_deposit' => $securityDepositAmount,
+                    'tier_upgrade_status' => 'pending',
+                    'tier_upgrade_requested_at' => now(),
+                    'tier_upgrade_completed_deliveries_snapshot' => $completedDeliveries,
+                ]);
+            });
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage() === 'INSUFFICIENT') {
+                return JsonResponser::send(true, 'Insufficient wallet balance to cover the security deposit.', null, 422);
+            }
+
+            throw $e;
+        } catch (\Exception $e) {
+            return JsonResponser::send(true, 'Failed to submit tier upgrade request. Please try again.', null, 500);
+        }
+
+        return JsonResponser::send(false, 'Tier upgrade request submitted. An admin will review your delivery history before approving.', [
+            'tier_upgrade_status' => 'pending',
+            'security_deposit_amount' => $securityDepositAmount,
+            'wallet_balance' => (float) $user->fresh()->main_wallet,
+        ], 200);
     }
- 
-    return JsonResponser::send(false, 'Tier upgrade request submitted. An admin will review your delivery history before approving.', [
-        'tier_upgrade_status' => 'pending',
-        'security_deposit_amount' => $securityDepositAmount,
-        'wallet_balance' => (float) $user->fresh()->main_wallet,
-    ], 200);
-}
+
+    /**
+     * Get security wallet info — balance, required amount for current/next tier, and eligibility.
+     */
+    public function securityWalletInfo(Request $request)
+    {
+        $user = $request->user();
+
+        if ($user->user_type !== 'agent') {
+            return JsonResponser::send(true, 'Access denied. Agent only.', null, 403);
+        }
+
+        $currentTier = (int) ($user->delivery_tier ?? 1);
+        $nextTier = $currentTier + 1;
+
+        $currentRequired = DeliveryTier::requiredSecurityDeposit($currentTier);
+        $nextRequired = DeliveryTier::requiredSecurityDeposit($nextTier);
+
+        $currentBalance = (float) ($user->security_wallet_deposit ?? 0);
+
+        return JsonResponser::send(false, 'Security wallet info loaded.', [
+            'security_balance' => $currentBalance,
+            'current_tier' => $currentTier,
+            'current_tier_name' => DeliveryTier::tierName($currentTier),
+            'current_tier_required' => $currentRequired,
+            'next_tier' => $nextTier <= 7 ? $nextTier : null,
+            'next_tier_name' => $nextTier <= 7 ? DeliveryTier::tierName($nextTier) : null,
+            'next_tier_required' => $nextTier <= 7 ? $nextRequired : null,
+            'earnings_balance' => (float) $user->main_wallet,
+            'met_current_requirement' => $currentBalance >= $currentRequired,
+            'met_next_requirement' => $nextTier <= 7 ? $currentBalance >= $nextRequired : true,
+        ]);
+    }
+
+    /**
+     * Transfer from earnings wallet to security wallet.
+     *
+     * Rules:
+     * - Amount must be positive
+     * - Agent must have sufficient earnings balance
+     * - Security wallet cannot exceed the next tier's required amount
+     *   (or current tier's required amount if already at max tier)
+     */
+    public function transferToSecurityWallet(Request $request)
+    {
+        $user = $request->user();
+
+        if ($user->user_type !== 'agent') {
+            return JsonResponser::send(true, 'Access denied. Agent only.', null, 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'amount' => 'required|numeric|min:100',
+        ]);
+
+        if ($validator->fails()) {
+            return JsonResponser::send(true, $validator->errors()->first(), $validator->errors(), 422);
+        }
+
+        $amount = round((float) $validator->validated()['amount'], 2);
+        $currentTier = (int) ($user->delivery_tier ?? 1);
+        $nextTier = min($currentTier + 1, 7);
+
+        // Max the security wallet can hold is the next tier's requirement (or current if at max)
+        $maxAllowed = DeliveryTier::requiredSecurityDeposit($nextTier);
+        if ($maxAllowed <= 0) {
+            $maxAllowed = DeliveryTier::requiredSecurityDeposit($currentTier);
+        }
+
+        $currentSecurityBalance = (float) ($user->security_wallet_deposit ?? 0);
+        $spaceAvailable = max(0, $maxAllowed - $currentSecurityBalance);
+
+        if ($amount > $spaceAvailable) {
+            return JsonResponser::send(true, sprintf(
+                'Transfer amount exceeds the maximum allowed. Your security wallet can hold up to ₦%s for your next tier. Space available: ₦%s.',
+                number_format($maxAllowed),
+                number_format($spaceAvailable)
+            ), [
+                'max_allowed' => $maxAllowed,
+                'space_available' => $spaceAvailable,
+            ], 422);
+        }
+
+        if ((float) $user->main_wallet < $amount) {
+            return JsonResponser::send(true, 'Insufficient earnings wallet balance.', null, 422);
+        }
+
+        try {
+            DB::transaction(function () use ($user, $amount) {
+                $lockedUser = User::where('id', $user->id)->lockForUpdate()->first();
+
+                if ((float) $lockedUser->main_wallet < $amount) {
+                    throw new \RuntimeException('INSUFFICIENT');
+                }
+
+                $lockedUser->decrement('main_wallet', $amount);
+                $lockedUser->increment('security_wallet_deposit', $amount);
+            });
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage() === 'INSUFFICIENT') {
+                return JsonResponser::send(true, 'Insufficient earnings wallet balance.', null, 422);
+            }
+            throw $e;
+        }
+
+        $user->refresh();
+
+        return JsonResponser::send(false, 'Transfer to security wallet successful.', [
+            'earnings_balance' => (float) $user->main_wallet,
+            'security_balance' => (float) $user->security_wallet_deposit,
+        ], 200);
+    }
+
+    /**
+     * Initialize Paystack payment to fund security wallet directly.
+     *
+     * Creates a Paystack transaction and returns the payment URL.
+     * The callback will credit the security wallet.
+     */
+    public function fundSecurityWallet(Request $request)
+    {
+        $user = $request->user();
+
+        if ($user->user_type !== 'agent') {
+            return JsonResponser::send(true, 'Access denied. Agent only.', null, 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'amount' => 'required|numeric|min:100',
+        ]);
+
+        if ($validator->fails()) {
+            return JsonResponser::send(true, $validator->errors()->first(), $validator->errors(), 422);
+        }
+
+        $amount = round((float) $validator->validated()['amount'], 2);
+        $currentTier = (int) ($user->delivery_tier ?? 1);
+        $nextTier = min($currentTier + 1, 7);
+
+        $maxAllowed = DeliveryTier::requiredSecurityDeposit($nextTier);
+        if ($maxAllowed <= 0) {
+            $maxAllowed = DeliveryTier::requiredSecurityDeposit($currentTier);
+        }
+
+        $currentSecurityBalance = (float) ($user->security_wallet_deposit ?? 0);
+        $spaceAvailable = max(0, $maxAllowed - $currentSecurityBalance);
+
+        if ($amount > $spaceAvailable) {
+            return JsonResponser::send(true, sprintf(
+                'Amount exceeds the maximum allowed. Space available: ₦%s.',
+                number_format($spaceAvailable)
+            ), [
+                'max_allowed' => $maxAllowed,
+                'space_available' => $spaceAvailable,
+            ], 422);
+        }
+
+        if (!PaystackClient::configured()) {
+            return JsonResponser::send(true, 'Payment gateway not configured.', null, 500);
+        }
+
+        $reference = 'sec_wallet_' . $user->id . '_' . time();
+
+        $response = PaystackClient::http()->post(PaystackClient::baseUrl() . '/transaction/initialize', [
+            'email' => $user->email,
+            'amount' => (int) ($amount * 100), // Paystack uses kobo
+            'reference' => $reference,
+            'callback_url' => url('/api/v1/agent/security-wallet/verify-payment'),
+            'metadata' => [
+                'user_id' => $user->id,
+                'purpose' => 'security_wallet_funding',
+                'amount' => $amount,
+            ],
+        ]);
+
+        if (!$response->successful() || !$response->json('status')) {
+            return JsonResponser::send(true, 'Failed to initialize payment.', null, 500);
+        }
+
+        return JsonResponser::send(false, 'Payment initialized.', [
+            'authorization_url' => $response->json('data.authorization_url'),
+            'reference' => $reference,
+            'access_code' => $response->json('data.access_code'),
+        ], 200);
+    }
+
+    /**
+     * Verify Paystack payment and credit security wallet.
+     */
+    public function verifySecurityWalletPayment(Request $request)
+    {
+        $reference = $request->query('reference') ?? $request->input('reference');
+
+        if (!$reference) {
+            return JsonResponser::send(true, 'Payment reference is required.', null, 422);
+        }
+
+        if (!PaystackClient::configured()) {
+            return JsonResponser::send(true, 'Payment gateway not configured.', null, 500);
+        }
+
+        $response = PaystackClient::get('transaction/verify/' . $reference);
+
+        if (!$response->successful() || !$response->json('status')) {
+            return JsonResponser::send(true, 'Payment verification failed.', null, 400);
+        }
+
+        $data = $response->json('data');
+
+        if ($data['status'] !== 'success') {
+            return JsonResponser::send(true, 'Payment was not successful.', [
+                'payment_status' => $data['status'],
+            ], 400);
+        }
+
+        $metadata = $data['metadata'] ?? [];
+        $userId = $metadata['user_id'] ?? null;
+        $amount = (float) ($metadata['amount'] ?? ($data['amount'] / 100));
+
+        if (!$userId) {
+            return JsonResponser::send(true, 'Invalid payment metadata.', null, 400);
+        }
+
+        $user = User::find($userId);
+
+        if (!$user) {
+            return JsonResponser::send(true, 'User not found.', null, 404);
+        }
+
+        // Credit the security wallet
+        DB::transaction(function () use ($user, $amount) {
+            $lockedUser = User::where('id', $user->id)->lockForUpdate()->first();
+            $lockedUser->increment('security_wallet_deposit', $amount);
+        });
+
+        $user->refresh();
+
+        return JsonResponser::send(false, 'Security wallet funded successfully.', [
+            'security_balance' => (float) $user->security_wallet_deposit,
+            'amount_credited' => $amount,
+        ], 200);
+    }
 }

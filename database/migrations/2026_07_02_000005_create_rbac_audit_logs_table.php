@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('rbac_audit_logs')) {
+            return;
+        }
+
         Schema::create('rbac_audit_logs', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('actor_id');

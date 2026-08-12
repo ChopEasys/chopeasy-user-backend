@@ -8,6 +8,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasColumn('agent_commission_settings', 'agent_percent')) {
+            return;
+        }
+
         Schema::table('agent_commission_settings', function (Blueprint $table) {
             $table->renameColumn('rider_percent', 'agent_percent');
         });

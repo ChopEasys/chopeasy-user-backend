@@ -17,6 +17,14 @@ class DeliveryTierSetting extends Model
         'max_security_deposit',
         'description',
         'active',
+        'commission_percent',
+        'annual_reward_amount',
+        'min_active_agents',
+        'min_subordinate_tier',
+        'subordinate_tier_level',
+        'min_deliveries',
+        'delivery_window_months',
+        'territory_scope',
     ];
 
     protected $casts = [
@@ -24,6 +32,13 @@ class DeliveryTierSetting extends Model
         'min_security_deposit' => 'float',
         'max_security_deposit' => 'float',
         'active' => 'boolean',
+        'commission_percent' => 'decimal:2',
+        'annual_reward_amount' => 'decimal:2',
+        'min_active_agents' => 'integer',
+        'min_subordinate_tier' => 'integer',
+        'subordinate_tier_level' => 'integer',
+        'min_deliveries' => 'integer',
+        'delivery_window_months' => 'integer',
     ];
 
     /**
@@ -69,5 +84,27 @@ class DeliveryTierSetting extends Model
             ->where('active', true)
             ->orderBy('tier')
             ->first();
+    }
+
+    /**
+     * Determine if this tier is an ambassador tier (Tier 4+)
+     */
+    public function isAmbassadorTier(): bool
+    {
+        return $this->tier >= 4;
+    }
+
+    /**
+     * Get the expected territory scope for this tier
+     */
+    public function expectedTerritoryScope(): string
+    {
+        return match ((int) $this->tier) {
+            4 => 'community',
+            5 => 'lga',
+            6 => 'state',
+            7 => 'national',
+            default => 'none',
+        };
     }
 }

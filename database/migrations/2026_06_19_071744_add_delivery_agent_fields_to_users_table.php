@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasColumn('users', 'is_delivery_agent')) {
+            return;
+        }
+
         Schema::table('users', function (Blueprint $table) {
             $table->boolean('is_delivery_agent')->default(false)->after('onboarding_completed');
             $table->string('delivery_agent_application_status')->default('pending')->after('is_delivery_agent');

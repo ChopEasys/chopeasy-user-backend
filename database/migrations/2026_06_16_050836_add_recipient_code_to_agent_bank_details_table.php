@@ -11,9 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('agent_bank_details', function (Blueprint $table) {
-            $table->string('recipient_code')->nullable()->after('account_name');
-        });
+        if (!Schema::hasColumn('agent_bank_details', 'recipient_code')) {
+            Schema::table('agent_bank_details', function (Blueprint $table) {
+                $table->string('recipient_code')->nullable()->after('account_name');
+            });
+        }
     }
 
     /**

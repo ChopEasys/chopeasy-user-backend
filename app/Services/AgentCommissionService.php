@@ -7,6 +7,7 @@ use App\Models\AgentEarning;
 use App\Models\AgentReferralCommissionCounter;
 use App\Models\Order;
 use App\Models\User;
+use App\Services\AmbassadorCommissionService;
 use Illuminate\Support\Facades\DB;
 
 class AgentCommissionService
@@ -236,8 +237,9 @@ class AgentCommissionService
             return;
         }
 
-        $settings = $this->settings();
-        $downlinePercent = (float) $settings->downline_percent;
+        // Use tier-aware commission rate from AmbassadorCommissionService
+        $ambassadorCommissionService = app(AmbassadorCommissionService::class);
+        $downlinePercent = $ambassadorCommissionService->getDownlineCommissionRate($upline);
         if ($downlinePercent <= 0) {
             return;
         }

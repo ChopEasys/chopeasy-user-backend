@@ -13,6 +13,7 @@ use App\Models\Order;
 use App\Responser\JsonResponser;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use App\Support\DeliveryTier;
 
 class AdminAgentController extends Controller
 {
@@ -84,6 +85,7 @@ class AdminAgentController extends Controller
                 'id', 'fullname', 'email', 'phoneno',
                 'is_delivery_agent', 'delivery_agent_application_status',
                 'delivery_agent_tier', 'tier_upgrade_status',
+                'ambassador_badge_tier',
                 'main_wallet', 'security_wallet_deposit', 'created_at'
             )
             ->with(['agentBankDetails' => function ($query) {
@@ -111,6 +113,8 @@ class AdminAgentController extends Controller
                     'is_delivery_agent' => (bool) $agent->is_delivery_agent,
                     'delivery_agent_application_status' => $agent->delivery_agent_application_status,
                     'delivery_tier' => (int) $tierNumber,
+                    'delivery_tier_name' => DeliveryTier::tierName((int) $tierNumber),
+                    'ambassador_badge_tier' => $agent->ambassador_badge_tier,
                     'tier_upgrade_status' => $agent->tier_upgrade_status,
                     'bank_name' => $agent->agentBankDetails?->bank_name,
                     'account_number' => $agent->agentBankDetails?->account_number,
@@ -118,7 +122,7 @@ class AdminAgentController extends Controller
                     'pending_withdrawal' => (float) $pendingWithdrawal,
                     'wallet_balance' => (float) $agent->main_wallet,
                     'security_deposit' => (float) $agent->security_wallet_deposit,
-                 'created_at' => $agent->created_at?->toIso8601String() ?? null,
+                    'created_at' => $agent->created_at?->toIso8601String() ?? null,
                 ];
             });
  
@@ -519,7 +523,7 @@ class AdminAgentController extends Controller
     public function updateAgentTier(Request $request, $agentId)
     {
         $validator = Validator::make($request->all(), [
-            'tier' => 'required|integer|min:1|max:5',
+            'tier' => 'required|integer|min:1|max:7',
             'notes' => 'sometimes|max:500',
         ]);
 
@@ -548,7 +552,7 @@ class AdminAgentController extends Controller
 
         return JsonResponser::send(
             false,
-            'Agent tier updated to Tier ' . $tierNumber . '.',
+            'Agent tier updated to ' . DeliveryTier::tierName($tierNumber) . '.',
             [
                 'agent_id' => $agent->id,
                 'new_tier' => $tierNumber,
