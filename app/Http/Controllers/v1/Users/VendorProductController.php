@@ -1373,4 +1373,141 @@ case 'price-low':
             ], 500);
         }
     }
+
+    /**
+     * Get popular products across all vendors (public, no auth required).
+     * Returns products ordered by quantity sold or random if no order data.
+     */
+    public function popularProducts(Request $request)
+    {
+        try {
+            $limit = (int) $request->get('limit', 10);
+
+            $products = VendorProductItem::select([
+                    'vendor_product_items.id',
+                    'vendor_product_items.vendor_id',
+                    'vendor_product_items.name',
+                    'vendor_product_items.display_name',
+                    'vendor_product_items.price',
+                    'vendor_product_items.logo',
+                    'vendor_product_items.category_name',
+                    'vendor_product_items.uom',
+                    'vendor_product_items.weight',
+                    'vendor_product_items.quantity',
+                    'vendor_product_items.manual_out_of_stock',
+                ])
+                ->join('users', 'users.id', '=', 'vendor_product_items.vendor_id')
+                ->where('users.user_type', 'vendor')
+                ->where('users.is_active', 1)
+                ->where('vendor_product_items.quantity', '>', 0)
+                ->where('vendor_product_items.manual_out_of_stock', false)
+                ->inRandomOrder()
+                ->limit($limit)
+                ->get()
+                ->map(function ($product) {
+                    return [
+                        'id' => $product->id,
+                        'vendor_id' => $product->vendor_id,
+                        'name' => $product->display_name ?: $product->name,
+                        'price' => (float) $product->price,
+                        'image' => $product->logo,
+                        'category' => $product->category_name,
+                        'uom' => $product->uom,
+                        'weight' => $product->weight,
+                        'in_stock' => $product->quantity > 0 && !$product->manual_out_of_stock,
+                    ];
+                });
+
+            return response()->json([
+                'error' => false,
+                'message' => 'Popular products loaded.',
+                'data' => $products,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Failed to load popular products.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Search products across all vendors (public, no auth required).
+     */
+    public function searchProducts(Request $request)
+    {
+        try {
+            $query = $request->get('q', '');
+            $category = $request->get('category');
+            $limit = (int) $request->get('limit', 20);
+
+            if (!$query && !$category) {
+                return response()->json([
+                    'error' => false,
+                    'message' => 'Provide a search query or category.',
+                    'data' => [],
+                ]);
+            }
+
+            $products = VendorProductItem::select([
+                    'vendor_product_items.id',
+                    'vendor_product_items.vendor_id',
+                    'vendor_product_items.name',
+                    'vendor_product_items.display_name',
+                    'vendor_product_items.price',
+                    'vendor_product_items.logo',
+                    'vendor_product_items.category_name',
+                    'vendor_product_items.uom',
+                    'vendor_product_items.weight',
+                    'vendor_product_items.quantity',
+                    'vendor_product_items.manual_out_of_stock',
+                    'users.store_name',
+                    'users.store_image',
+                ])
+                ->join('users', 'users.id', '=', 'vendor_product_items.vendor_id')
+                ->where('users.user_type', 'vendor')
+                ->where('users.is_active', 1)
+                ->where('vendor_product_items.quantity', '>', 0)
+                ->where('vendor_product_items.manual_out_of_stock', false);
+
+            if ($query) {
+                $products->where(function ($q) use ($query) {
+                    $q->where('vendor_product_items.name', 'like', "%{$query}%")
+                      ->orWhere('vendor_product_items.display_name', 'like', "%{$query}%")
+                      ->orWhere('vendor_product_items.category_name', 'like', "%{$query}%");
+                });
+            }
+
+            if ($category) {
+                $products->where('vendor_product_items.category_name', $category);
+            }
+
+            $results = $products->limit($limit)->get()->map(function ($product) {
+                return [
+                    'id' => $product->id,
+                    'vendor_id' => $product->vendor_id,
+                    'name' => $product->display_name ?: $product->name,
+                    'price' => (float) $product->price,
+                    'image' => $product->logo,
+                    'category' => $product->category_name,
+                    'uom' => $product->uom,
+                    'weight' => $product->weight,
+                    'in_stock' => true,
+                    'store_name' => $product->store_name,
+                    'store_image' => $product->store_image,
+                ];
+            });
+
+            return response()->json([
+                'error' => false,
+                'message' => 'Search results loaded.',
+                'data' => $results,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Search failed.',
+            ], 500);
+        }
+    }
 }

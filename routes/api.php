@@ -321,6 +321,8 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
 
     Route::get('/all/vendor', [VendorProductController::class, 'listVendors']);
     Route::get('/all/categories', [VendorProductController::class, 'listVendorCategories']);
+    Route::get('/all/popular-products', [VendorProductController::class, 'popularProducts']);
+    Route::get('/all/search-products', [VendorProductController::class, 'searchProducts']);
 
     // Public Pricing Information
     Route::get('/pricing-rates', [OrderPricingController::class, 'getPricingRates']);
