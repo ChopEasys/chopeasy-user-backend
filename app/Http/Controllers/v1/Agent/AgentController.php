@@ -123,9 +123,9 @@ class AgentController extends Controller
                 ],
             ],
             'referral_code' => $ref,
-            'referred_customers_count' => User::where('referred_by_agent_id', $user->id)->where('user_type', 'customer')->count(),
-            'referred_vendors_count' => User::where('referred_by_agent_id', $user->id)->where('user_type', 'vendor')->count(),
-            'referred_riders_count' => User::where('referred_by_agent_id', $user->id)->where('user_type', 'agent')->count(),
+            'referred_customers_count' => User::where('referred_by_agent_id', $user->id)->where('user_type', 'customer')->where('id', '!=', $user->id)->count(),
+            'referred_vendors_count' => User::where('referred_by_agent_id', $user->id)->where('user_type', 'vendor')->where('id', '!=', $user->id)->count(),
+            'referred_riders_count' => User::where('referred_by_agent_id', $user->id)->where('user_type', 'agent')->where('id', '!=', $user->id)->count(),
             'bank_details' => $bankDetails ? [
                 'bank_name' => $bankDetails->bank_name,
                 'bank_code' => $bankDetails->bank_code,

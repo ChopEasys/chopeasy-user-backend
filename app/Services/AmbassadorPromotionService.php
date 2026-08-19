@@ -32,6 +32,7 @@ class AmbassadorPromotionService
     {
         $downline = User::where('referred_by_agent_id', $agent->id)
             ->where('user_type', 'agent')
+            ->where('id', '!=', $agent->id)
             ->get();
 
         $activeCount = 0;
@@ -52,6 +53,7 @@ class AmbassadorPromotionService
     public function getSubordinateTierCount(User $agent, int $requiredTier): int
     {
         return User::where('referred_by_agent_id', $agent->id)
+            ->where('id', '!=', $agent->id)
             ->where(function ($query) use ($requiredTier) {
                 $query->where('delivery_tier', $requiredTier)
                     ->orWhere('ambassador_badge_tier', $requiredTier);
