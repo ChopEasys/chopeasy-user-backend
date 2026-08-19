@@ -57,6 +57,7 @@ class AmbassadorTierSeeder extends Seeder
                 'delivery_window_months' => 6,
                 'territory_scope' => 'none',
             ],
+            [
                 'min_deliveries' => 0,
                 'delivery_window_months' => 12,
                 'territory_scope' => 'none',
