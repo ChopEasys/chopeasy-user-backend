@@ -247,12 +247,20 @@ public function ambassadorRewards()
 }
 
 /**
- * Get the effective tier (highest of badge tier and current delivery tier).
+ * Get the effective tier (highest of badge tier, delivery_tier, and delivery_agent_tier).
  */
 public function getEffectiveTierAttribute()
 {
     $badgeTier = (int) ($this->ambassador_badge_tier ?? 0);
     $deliveryTier = (int) ($this->delivery_tier ?? 1);
-    return max($badgeTier, $deliveryTier);
+
+    // Also consider the legacy delivery_agent_tier string field (format: "tier_1", "tier_2", etc.)
+    $agentTier = 0;
+    if ($this->delivery_agent_tier) {
+        preg_match('/tier_(\d+)/', $this->delivery_agent_tier, $matches);
+        $agentTier = (int) ($matches[1] ?? 0);
+    }
+
+    return max($badgeTier, $deliveryTier, $agentTier);
 }
 }
