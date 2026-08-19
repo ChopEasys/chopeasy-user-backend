@@ -58,11 +58,6 @@ class AmbassadorTierSeeder extends Seeder
                 'territory_scope' => 'none',
             ],
             [
-                'min_deliveries' => 0,
-                'delivery_window_months' => 12,
-                'territory_scope' => 'none',
-            ],
-            [
                 'tier' => 3,
                 'tier_name' => 'Elite Agent',
                 'max_order_amount' => 0,
