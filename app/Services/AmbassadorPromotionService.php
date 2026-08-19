@@ -124,29 +124,39 @@ class AmbassadorPromotionService
         $deliveryCount = $this->getDeliveryCountInWindow($agent, $deliveryWindowMonths);
         $requiredDeliveries = (int) $tierConfig->min_deliveries;
 
-        // Build criteria breakdown
-        $criteria = [
-            [
+        // Build criteria breakdown — only include criteria with non-zero requirements.
+        // Tiers 1-3 don't have ambassador-style requirements (active agents, subordinates, deliveries),
+        // so showing "0 required" with "Criterion met ✓" is misleading.
+        $criteria = [];
+
+        if ($requiredActiveAgents > 0) {
+            $criteria[] = [
                 'name' => 'active_downline',
                 'current' => $activeDownlineCount,
                 'required' => $requiredActiveAgents,
                 'met' => $activeDownlineCount >= $requiredActiveAgents,
-            ],
-            [
+            ];
+        }
+
+        if ($requiredSubordinateCount > 0) {
+            $criteria[] = [
                 'name' => 'subordinate_tier_count',
                 'current' => $subordinateCount,
                 'required' => $requiredSubordinateCount,
                 'met' => $subordinateCount >= $requiredSubordinateCount,
-            ],
-            [
+            ];
+        }
+
+        if ($requiredDeliveries > 0) {
+            $criteria[] = [
                 'name' => 'delivery_count',
                 'current' => $deliveryCount,
                 'required' => $requiredDeliveries,
                 'met' => $deliveryCount >= $requiredDeliveries,
-            ],
-        ];
+            ];
+        }
 
-        $allMet = collect($criteria)->every(fn($criterion) => $criterion['met']);
+        $allMet = empty($criteria) || collect($criteria)->every(fn($criterion) => $criterion['met']);
 
         return [
             'eligible' => $allMet,
