@@ -45,6 +45,7 @@ class InsufficientWalletBalanceNotification extends Notification
             ->line("We couldn't process your {$paymentType} installment of NGN {$amount} for order {$orderNumber} because your main wallet balance is low.")
             ->line('Please top up your main wallet to keep your food plan on track.')
             ->line("Next due date: {$nextDueLabel}")
+            ->action('Top Up Wallet', 'https://www.chopeasy.ng')
             ->salutation('Thanks, ChopEasy');
     }
 }

@@ -191,21 +191,33 @@ class ProcessRecurringOrders extends Command
     
                 if ($deduction > 0) {
     
-                    try {
+                    // Only send insufficient funds email once per day per order
+                    // to avoid spamming users every hour when the scheduler runs
+                    $alreadyNotifiedToday = Transaction::where('user_id', $user->id)
+                        ->where('order_id', $order->id)
+                        ->where('type', 'deduction')
+                        ->where('status', 'failed')
+                        ->where('created_at', '>=', now()->startOfDay())
+                        ->where('created_at', '<', now())
+                        ->exists();
+
+                    if (!$alreadyNotifiedToday) {
+                        try {
     
-                        $user->notify(
-                            new InsufficientWalletBalanceNotification(
-                                $order,
-                                $deduction
-                            )
-                        );
+                            $user->notify(
+                                new InsufficientWalletBalanceNotification(
+                                    $order,
+                                    $deduction
+                                )
+                            );
     
-                    } catch (\Throwable $e) {
+                        } catch (\Throwable $e) {
     
-                        $this->warn(
-                            "Failed to send insufficient funds email for user {$user->id}, order #{$order->id}: "
-                            . $e->getMessage()
-                        );
+                            $this->warn(
+                                "Failed to send insufficient funds email for user {$user->id}, order #{$order->id}: "
+                                . $e->getMessage()
+                            );
+                        }
                     }
                 }
     
