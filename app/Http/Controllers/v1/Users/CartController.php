@@ -22,7 +22,11 @@ class CartController extends Controller
      */
     protected function getSessionId(Request $request, &$cookie = null): ?string
     {
-        $existing = $request->cookie('cart_session_id');
+        // Prefer an explicit session id from the request (mobile clients cannot
+        // rely on cookies): cookie -> X-Session-ID header -> session_id input.
+        $existing = $request->cookie('cart_session_id')
+            ?? $request->header('X-Session-ID')
+            ?? $request->input('session_id');
 
         if ($existing) {
             return $existing;

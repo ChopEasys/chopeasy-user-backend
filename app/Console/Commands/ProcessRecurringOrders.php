@@ -191,17 +191,17 @@ class ProcessRecurringOrders extends Command
     
                 if ($deduction > 0) {
     
-                    // Only send insufficient funds email once per day per order
-                    // to avoid spamming users every hour when the scheduler runs
-                    $alreadyNotifiedToday = Transaction::where('user_id', $user->id)
+                    // Only send insufficient funds email once per week per order
+                    // to avoid spamming users with repeated reminders
+                    $alreadyNotifiedThisWeek = Transaction::where('user_id', $user->id)
                         ->where('order_id', $order->id)
                         ->where('type', 'deduction')
                         ->where('status', 'failed')
-                        ->where('created_at', '>=', now()->startOfDay())
+                        ->where('created_at', '>=', now()->subDays(7))
                         ->where('created_at', '<', now())
                         ->exists();
 
-                    if (!$alreadyNotifiedToday) {
+                    if (!$alreadyNotifiedThisWeek) {
                         try {
     
                             $user->notify(
