@@ -47,6 +47,9 @@ return [
     'inventory' => [
         'url' => env('INVENTORY_SERVICE_URL', 'http://127.0.0.1:8001/api/v1'),
         'api_token' => env('INVENTORY_API_TOKEN', 'zX9kPqW3mT7rY2vN8jL4hB6fD5cG1aE1'),
+        // Shared secret used by the inventory/admin service to authenticate
+        // internal callbacks (e.g. weight sync) into this user backend.
+        'sync_token' => env('INVENTORY_SYNC_TOKEN', 'zX9kPqW3mT7rY2vN8jL4hB6fD5cG1aE1'),
     ],
     'ipgeolocation' => [
         'key' => env('IPGEOLOCATION_KEY'),

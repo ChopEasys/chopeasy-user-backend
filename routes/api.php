@@ -21,6 +21,7 @@ use App\Http\Controllers\v1\Users\NotificationController;
 use App\Http\Controllers\v1\Users\PriceSyncController;
 use App\Http\Controllers\v1\Users\PushSubscriptionController;
 use App\Http\Controllers\v1\Users\BankAccountController;
+use App\Http\Controllers\v1\Users\InternalSyncController;
 use App\Http\Controllers\v1\Orders\OrderPricingController;
 use App\Http\Controllers\v1\Agent\AgentController;
 use App\Http\Controllers\v1\Agent\AmbassadorController;
@@ -296,6 +297,9 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
     });
 
     // Public routes
+
+    // Internal service-to-service sync (secured by shared token header)
+    Route::post('/internal/vendor-products/sync-weight', [InternalSyncController::class, 'syncWeight']);
 
     // Push notification VAPID key (no authentication required)
     Route::get('/push/vapid-key', [PushSubscriptionController::class, 'vapidKey']);
