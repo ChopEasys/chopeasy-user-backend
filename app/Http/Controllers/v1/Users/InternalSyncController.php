@@ -42,7 +42,15 @@ class InternalSyncController extends Controller
      */
     public function syncWeight(Request $request)
     {
+        Log::info('Weight sync request received', [
+            'has_token' => (bool) ($request->header('X-Sync-Token') ?? $request->input('sync_token')),
+            'payload' => $request->all(),
+        ]);
+
         if (!$this->authorize($request)) {
+            Log::warning('Weight sync unauthorized', [
+                'provided_token_present' => (bool) ($request->header('X-Sync-Token') ?? $request->input('sync_token')),
+            ]);
             return response()->json(['error' => 'Unauthorized'], 401);
         }
 
