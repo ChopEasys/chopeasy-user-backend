@@ -73,61 +73,105 @@ class SendPushNotificationJob implements ShouldQueue
             return;
         }
 
-        // 3. Create WebPush instance with VAPID credentials
-        $webPush = new WebPush([
-            'VAPID' => [
-                'subject' => config('webpush.vapid_subject'),
-                'publicKey' => config('webpush.vapid_public_key'),
-                'privateKey' => config('webpush.vapid_private_key'),
-            ],
-        ]);
+        // 3. Split subscriptions into native (Expo) and web-push channels.
+        //    Expo tokens are stored in the endpoint column and have no keys.
+        $expoTokens = [];
+        $webSubscriptions = [];
 
-        // 4. Queue notifications to each subscription
         foreach ($subscriptions as $pushSubscription) {
-            $subscription = Subscription::create([
-                'endpoint' => $pushSubscription->endpoint,
-                'publicKey' => $pushSubscription->p256dh_key,
-                'authToken' => $pushSubscription->auth_secret,
-            ]);
-
-            $webPush->queueNotification($subscription, json_encode($this->payload));
+            if ($this->isExpoEndpoint($pushSubscription->endpoint)) {
+                $expoTokens[] = $pushSubscription->endpoint;
+            } else {
+                $webSubscriptions[] = $pushSubscription;
+            }
         }
 
-        // 5. Flush and process results
-        $allFailed = true;
+        $anySuccess = false;
 
-        /** @var MessageSentReport $report */
-        foreach ($webPush->flush() as $report) {
-            $endpoint = $report->getEndpoint();
+        // 4. Deliver to native mobile devices via the Expo Push API.
+        if (!empty($expoTokens)) {
+            $expoResult = app(\App\Services\ExpoPushService::class)->send($expoTokens, $this->payload);
 
-            if ($report->isSuccess()) {
-                $allFailed = false;
-            } elseif ($report->getResponse() && in_array($report->getResponse()->getStatusCode(), [404, 410])) {
-                // 6. On 404/410: subscription is expired/invalid, remove from database
+            if ($expoResult['success']) {
+                $anySuccess = true;
+            }
+
+            // Prune tokens Expo reported as no longer registered.
+            foreach ($expoResult['invalid_tokens'] as $deadToken) {
                 PushSubscription::where('user_id', $this->userId)
-                    ->where('endpoint', $endpoint)
+                    ->where('endpoint', $deadToken)
                     ->delete();
 
-                Log::info('Push subscription removed (expired/invalid)', [
+                Log::info('Expo push token removed (device not registered)', [
                     'user_id' => $this->userId,
-                    'endpoint' => $endpoint,
-                    'status_code' => $report->getResponse()->getStatusCode(),
-                ]);
-            } else {
-                // 7. On network/server error: log failure, continue to next
-                Log::warning('Push notification delivery failed', [
-                    'user_id' => $this->userId,
-                    'type' => $this->type,
-                    'endpoint' => $endpoint,
-                    'reason' => $report->getReason(),
+                    'endpoint' => $deadToken,
                 ]);
             }
         }
 
-        // 8. If ALL subscriptions failed, store as database notification fallback
-        if ($allFailed) {
+        // 5. Deliver to browsers via web-push (VAPID).
+        if (!empty($webSubscriptions)) {
+            $webPush = new WebPush([
+                'VAPID' => [
+                    'subject' => config('webpush.vapid_subject'),
+                    'publicKey' => config('webpush.vapid_public_key'),
+                    'privateKey' => config('webpush.vapid_private_key'),
+                ],
+            ]);
+
+            foreach ($webSubscriptions as $pushSubscription) {
+                $subscription = Subscription::create([
+                    'endpoint' => $pushSubscription->endpoint,
+                    'publicKey' => $pushSubscription->p256dh_key,
+                    'authToken' => $pushSubscription->auth_secret,
+                ]);
+
+                $webPush->queueNotification($subscription, json_encode($this->payload));
+            }
+
+            /** @var MessageSentReport $report */
+            foreach ($webPush->flush() as $report) {
+                $endpoint = $report->getEndpoint();
+
+                if ($report->isSuccess()) {
+                    $anySuccess = true;
+                } elseif ($report->getResponse() && in_array($report->getResponse()->getStatusCode(), [404, 410])) {
+                    // On 404/410: subscription is expired/invalid, remove from database
+                    PushSubscription::where('user_id', $this->userId)
+                        ->where('endpoint', $endpoint)
+                        ->delete();
+
+                    Log::info('Push subscription removed (expired/invalid)', [
+                        'user_id' => $this->userId,
+                        'endpoint' => $endpoint,
+                        'status_code' => $report->getResponse()->getStatusCode(),
+                    ]);
+                } else {
+                    // On network/server error: log failure, continue to next
+                    Log::warning('Push notification delivery failed', [
+                        'user_id' => $this->userId,
+                        'type' => $this->type,
+                        'endpoint' => $endpoint,
+                        'reason' => $report->getReason(),
+                    ]);
+                }
+            }
+        }
+
+        // 6. If nothing was delivered on any channel, store as database fallback.
+        if (!$anySuccess) {
             $this->storeAsDatabaseNotification();
         }
+    }
+
+    /**
+     * Whether the endpoint is an Expo push token (native mobile) rather than a
+     * web-push browser endpoint URL.
+     */
+    private function isExpoEndpoint(string $endpoint): bool
+    {
+        return str_starts_with($endpoint, 'ExponentPushToken[')
+            || str_starts_with($endpoint, 'ExpoPushToken[');
     }
 
     /**

@@ -10,6 +10,16 @@ use Illuminate\Support\Facades\Log;
 class PushSubscriptionController extends Controller
 {
     /**
+     * Detect an Expo push token, which is delivered by the native mobile app
+     * as the subscription endpoint (e.g. "ExponentPushToken[xxxx]").
+     */
+    private function isExpoToken(string $endpoint): bool
+    {
+        return str_starts_with($endpoint, 'ExponentPushToken[')
+            || str_starts_with($endpoint, 'ExpoPushToken[');
+    }
+
+    /**
      * Return the VAPID public key for client-side push subscription creation.
      *
      * @return \Illuminate\Http\JsonResponse
@@ -65,10 +75,16 @@ class PushSubscriptionController extends Controller
      */
     public function subscribe(Request $request)
     {
+        $endpoint = (string) $request->input('endpoint');
+        $isExpo = $this->isExpoToken($endpoint);
+
+        // Web push (browser) sends real p256dh/auth keys. Native mobile sends an
+        // Expo push token as the endpoint and has no keys, so those are optional
+        // for Expo tokens and stored as placeholders.
         $request->validate([
             'endpoint' => 'required|string|max:500',
-            'keys.p256dh' => 'required|string|max:255',
-            'keys.auth' => 'required|string|max:255',
+            'keys.p256dh' => [$isExpo ? 'nullable' : 'required', 'string', 'max:255'],
+            'keys.auth' => [$isExpo ? 'nullable' : 'required', 'string', 'max:255'],
         ]);
 
         $user = $request->user();
@@ -76,11 +92,11 @@ class PushSubscriptionController extends Controller
         $subscription = PushSubscription::updateOrCreate(
             [
                 'user_id' => $user->id,
-                'endpoint' => $request->input('endpoint'),
+                'endpoint' => $endpoint,
             ],
             [
-                'p256dh_key' => $request->input('keys.p256dh'),
-                'auth_secret' => $request->input('keys.auth'),
+                'p256dh_key' => $isExpo ? 'expo' : $request->input('keys.p256dh'),
+                'auth_secret' => $isExpo ? 'expo' : $request->input('keys.auth'),
             ]
         );
 
