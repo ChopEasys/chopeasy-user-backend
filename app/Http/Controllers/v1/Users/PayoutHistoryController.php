@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\v1\Users;
 
 use App\Http\Controllers\Controller;
+use App\Responser\JsonResponser;
 use App\Models\RiderPayout;
 use App\Models\VendorPayout;
 use App\Support\VendorOrderSettlement;
@@ -85,6 +86,40 @@ class PayoutHistoryController extends Controller
 
         $perPage = min(max((int) $request->query('per_page', 20), 1), 100);
 
+        // Delivery fees are credited to agents' wallets as AgentEarning rows.
+        // RiderPayout is the retired automatic payout flow for agents.
+        if ($user->user_type === 'agent') {
+            $paginator = \App\Models\AgentEarning::query()
+                ->where('agent_id', $user->id)
+                ->where('earning_type', 'delivery_fee')
+                ->with('order:id,order_number')
+                ->latest()
+                ->paginate($perPage);
+
+            $data = $paginator->getCollection()->map(function (\App\Models\AgentEarning $earning) {
+                return [
+                    'id' => $earning->id,
+                    'order_id' => $earning->order_id,
+                    'order_number' => $earning->order?->order_number,
+                    'payout_amount' => round((float) $earning->amount, 2),
+                    'status' => $earning->status,
+                    'paid_at' => $earning->created_at?->toIso8601String(),
+                    'failure_reason' => null,
+                    'transfer_reference' => null,
+                    'created_at' => $earning->created_at?->toIso8601String(),
+                ];
+            })->values();
+
+            return JsonResponser::send(false, 'Payout history loaded.', [
+                'data' => $data,
+                'meta' => [
+                    'current_page' => $paginator->currentPage(),
+                    'per_page' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                    'last_page' => $paginator->lastPage(),
+                ],
+            ]);
+        }
         $paginator = RiderPayout::query()
             ->where('rider_id', $user->id)
             ->with(['order'])

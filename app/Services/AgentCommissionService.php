@@ -446,11 +446,8 @@ class AgentCommissionService
 
     protected function recordedCommissionBaseAmount(AgentEarning $earning): float
     {
-        $percent = (float) $earning->commission_percent;
-        if ($percent > 0 && (float) $earning->amount > 0) {
-            return round(((float) $earning->amount * 100) / $percent, 2);
-        }
-
+        // order_amount stores the actual commission base at credit time. Deriving
+        // it from amount / percent can misstate delivery profit when rates change.
         return round((float) ($earning->order_amount ?? 0), 2);
     }
 

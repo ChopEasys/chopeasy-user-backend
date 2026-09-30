@@ -176,19 +176,20 @@ class AgentController extends Controller
 
         $type = strtolower((string) $request->query('type', 'customer'));
         $map = [
-            'customer' => 'customer_order',
-            'vendor' => 'vendor_payout',
-            'agent' => 'agent_downline',
+            'customer' => ['customer_order'],
+            'vendor' => ['vendor_payout'],
+            'agent' => ['agent_downline', 'agent_payout'],
+            'delivery' => ['delivery_fee'],
         ];
         if (!isset($map[$type])) {
-            return JsonResponser::send(true, 'Invalid type. Use customer, vendor, or agent.', null, 422);
+            return JsonResponser::send(true, 'Invalid type. Use customer, vendor, agent, or delivery.', null, 422);
         }
 
-        $earningType = $map[$type];
+        $earningTypes = $map[$type];
         $perPage = min(50, max(5, (int) $request->query('per_page', 20)));
 
         $paginator = AgentEarning::where('agent_id', $user->id)
-            ->where('earning_type', $earningType)
+            ->whereIn('earning_type', $earningTypes)
             ->with(['order:id,order_number,total_amount,status', 'referredUser:id,fullname,email'])
             ->latest()
             ->paginate($perPage);
