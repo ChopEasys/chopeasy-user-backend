@@ -33,26 +33,34 @@ class OrderPricingController extends Controller
                 $calculated['vendor_subtotal']
             );
 
+            // The browser only needs customer-facing totals. Keep internal vendor,
+            // rider, platform-revenue, and pricing-configuration details server-side.
+            $productSubtotal = (float) $pricing['customer_product_subtotal'];
+            $deliveryFee = (float) ($pricing['delivery_fee_total'] ?? $pricing['total_charge'] ?? 0);
+            $serviceFee = (float) ($pricing['service_fee_total'] ?? $pricing['service_charge_total'] ?? 0);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Order estimate calculated successfully',
                 'data' => [
                     'order_summary' => [
                         'item_count' => $calculated['item_count'],
-                        'total_weight_kg' => $calculated['total_weight'],
-                        'distance_km' => $distance,
-                        'product_subtotal' => $calculated['customer_product_subtotal'],
-                        'vendor_subtotal' => $calculated['vendor_subtotal'],
+                        'product_subtotal' => $productSubtotal,
                     ],
-                    'pricing' => $pricing,
-                    'breakdown_explanation' => $this->getPricingExplanation($pricing),
+                    'pricing' => [
+                        'customer_product_subtotal' => $productSubtotal,
+                        'delivery_fee_total' => $deliveryFee,
+                        'total_charge' => $deliveryFee,
+                        'service_fee_total' => $serviceFee,
+                        'service_charge_total' => $serviceFee,
+                        'total_to_pay' => $productSubtotal + $deliveryFee + $serviceFee,
+                    ],
                 ],
             ]);
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to calculate order estimate',
-                'error' => $e->getMessage(),
             ], 500);
         }
     }
