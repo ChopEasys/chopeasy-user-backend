@@ -41,7 +41,7 @@ class RiderPayoutRuleController extends Controller
         $request->validate([
             'zone_name' => 'required|string|max:50',
             'min_distance' => 'required|numeric|min:0',
-            'max_distance' => 'nullable|numeric|min:30|gte:min_distance',
+            'max_distance' => 'nullable|numeric|min:0|gte:min_distance',
             'flat_payout' => 'required|numeric|min:0',  // Zone fee
             'region_id' => 'required|string|max:50',
             'is_active' => 'boolean',
@@ -85,7 +85,7 @@ class RiderPayoutRuleController extends Controller
         $request->validate([
             'zone_name' => 'required|string|max:50',
             'min_distance' => 'required|numeric|min:0',
-            'max_distance' => 'nullable|numeric|min:30|gte:min_distance',
+            'max_distance' => 'nullable|numeric|min:0|gte:min_distance',
             'flat_payout' => 'required|numeric|min:0',
             'region_id' => 'required|string|max:50',
             'is_active' => 'boolean',
