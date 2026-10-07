@@ -1796,6 +1796,20 @@ public function availablePickups(Request $request)
         ]);
     }
 
+    $activeOrder = Order::where('accepted_by', $agent->id)
+        ->whereIn('status', ['ready', 'ongoing'])
+        ->first(['id', 'order_number', 'status']);
+
+    if ($activeOrder) {
+        return response()->json([
+            'error' => false,
+            'message' => 'Complete your current delivery before accepting another order.',
+            'has_active_delivery' => true,
+            'active_order' => $activeOrder,
+            'data' => [],
+        ]);
+    }
+
     $agentLat = $agent->latitude !== null ? (float) $agent->latitude : null;
     $agentLng = $agent->longitude !== null ? (float) $agent->longitude : null;
 
@@ -1810,17 +1824,12 @@ public function availablePickups(Request $request)
     $agentTier = (int) ($agent->delivery_tier ?? 1);
     $radiusKm = (float) config('services.google_maps.rider_assignment_radius_km', 12);
 
-    // Visibility rule: any ready, paid, unclaimed order within radius and
-    // tier limit is visible to every eligible agent. First to accept wins
-    // (see acceptDelivery). An order already accepted by THIS agent stays
-    // visible too (e.g. after a reload), but orders accepted by someone
-    // else drop out immediately.
+    // Ready, paid, unclaimed orders are visible to eligible agents. An agent
+    // with an accepted ready/ongoing order is gated above until delivery is
+    // confirmed by the customer.
     $orders = Order::with(['items.vendorOrders.vendor', 'user', 'vendorOrders.vendor'])
         ->where('status', 'ready')
         ->paidForFulfillment()
-        // ->where(function ($q) use ($agent) {
-        //     $q->whereNull('accepted_by')->orWhere('accepted_by', $agent->id);
-        // })
         ->whereNull('accepted_by')
         ->get()
         ->filter(function ($order) use ($agentTier, $agentLat, $agentLng, $radiusKm) {
@@ -1948,19 +1957,30 @@ public function availablePickups(Request $request)
     }
 
     try {
-        $order = DB::transaction(function () use ($orderId, $agent, $agentTier) {
+        $result = DB::transaction(function () use ($orderId, $agent, $agentTier) {
+            // Serialize claims per agent so two concurrent accept requests
+            // cannot assign two deliveries to the same agent.
+            User::whereKey($agent->id)->lockForUpdate()->first();
+
+            $activeOrder = Order::where('accepted_by', $agent->id)
+                ->whereIn('status', ['ready', 'ongoing'])
+                ->lockForUpdate()
+                ->first();
+
+            if ($activeOrder) {
+                return ['state' => 'busy', 'order' => $activeOrder];
+            }
+
             $order = Order::with('items')
                 ->where('id', $orderId)
                 ->where('status', 'ready')
                 ->paidForFulfillment()
-                ->where(function ($q) use ($agent) {
-                    $q->whereNull('accepted_by')->orWhere('accepted_by', $agent->id);
-                })
+                ->whereNull('accepted_by')
                 ->lockForUpdate()
                 ->first();
 
             if (!$order) {
-                return null;
+                return ['state' => 'unavailable', 'order' => null];
             }
 
             if (!DeliveryTier::tierCanHandle($agentTier, $order->fulfillmentAmount())) {
@@ -1973,7 +1993,7 @@ public function availablePickups(Request $request)
                 'accepted_by' => $agent->id,
             ]);
 
-            return $order;
+            return ['state' => 'accepted', 'order' => $order];
         });
     } catch (\RuntimeException $e) {
         if ($e->getMessage() === 'TIER_LIMIT') {
@@ -1984,6 +2004,15 @@ public function availablePickups(Request $request)
         throw $e;
     }
 
+    if ($result['state'] === 'busy') {
+        return $this->failure(
+            'Complete your current delivery before accepting another order.',
+            409,
+            ['active_order_id' => $result['order']->id]
+        );
+    }
+
+    $order = $result['order'];
     if (!$order) {
         return $this->failure('Order already taken or not available.', 400);
     }

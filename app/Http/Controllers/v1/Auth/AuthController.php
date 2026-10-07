@@ -290,6 +290,11 @@ class AuthController extends Controller
             }, 0);
             $lastOrder = $user->orders->first();
             $lastOrderDate = optional($lastOrder)->created_at;
+            $mainWalletBalance = (float) ($user->main_wallet ?? 0);
+            $foodWalletBalance = (float) ($user->food_wallet ?? 0);
+            $ongoingOrders = $user->orders
+                ->filter(fn($order) => in_array($order->status, ['pending', 'ready', 'ongoing'], true))
+                ->values();
             // $customerId = '' . str_pad($user->id, 4, '0', STR_PAD_LEFT);
 
             $address = [
@@ -310,18 +315,42 @@ class AuthController extends Controller
                     'full_name' => $user->fullname ?? $user->email,
                     'email' => $user->email,
                     'phone' => $user->phoneno,
+                    'wallet_balance' => $mainWalletBalance + $foodWalletBalance,
+                    'main_wallet_balance' => $mainWalletBalance,
+                    'food_wallet_balance' => $foodWalletBalance,
                     'verified' => $user->is_verified ? 'Verified' : 'Unverified',
                     'joined_at' => $user->created_at->format('F d, Y'),
                     'note' => $user->note ?? "No notes available.",
+                ],
+                'wallet' => [
+                    'main_balance' => $mainWalletBalance,
+                    'food_balance' => $foodWalletBalance,
+                    'total_balance' => $mainWalletBalance + $foodWalletBalance,
                 ],
                 'metrics' => [
                     'total_orders' => $user->orders_count,
                     'total_items' => (int) $totalItems,
                     'total_spent' => $totalSpent,
                     'avg_order_value' => round($avgOrderValue, 2),
+                    'ongoing_orders_count' => $ongoingOrders->count(),
+                    'ongoing_orders_total' => round((float) $ongoingOrders->sum('total_amount'), 2),
+                    'ongoing_orders_remaining' => round((float) $ongoingOrders->sum('remaining_amount'), 2),
                     'last_order_date' => $lastOrderDate?->format('M d, Y'),
                     'last_order_days_ago' => $lastOrderDate ? $lastOrderDate->diffForHumans() : null,
                 ],
+                'ongoing_orders' => $ongoingOrders->map(function ($order) {
+                    return [
+                        'id' => $order->id,
+                        'order_id' => $order->order_number,
+                        'date' => $order->created_at->format('M d, Y'),
+                        'status' => $order->status,
+                        'payment_type' => $order->payment_type,
+                        'payment_status' => $order->payment_status,
+                        'amount' => (float) $order->total_amount,
+                        'amount_paid' => (float) ($order->amount_paid ?? 0),
+                        'remaining_amount' => (float) ($order->remaining_amount ?? 0),
+                    ];
+                })->values(),
                 'orders' => $user->orders->map(function ($order) {
                     return [
                         'id'   => $order->id,
@@ -329,6 +358,10 @@ class AuthController extends Controller
                         'date' => $order->created_at->format('M d, Y'),
                         'amount' => $order->total_amount,
                         'status' => $order->status,
+                        'payment_type' => $order->payment_type,
+                        'payment_status' => $order->payment_status,
+                        'amount_paid' => (float) ($order->amount_paid ?? 0),
+                        'remaining_amount' => (float) ($order->remaining_amount ?? 0),
                         'items_count' => (int) ($order->item_count ?? $order->items?->sum('quantity') ?? 0),
                     ];
                 }),
