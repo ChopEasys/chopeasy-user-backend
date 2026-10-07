@@ -30,7 +30,7 @@ class Kernel extends ConsoleKernel
         //     app(RecentlyViewedRepositoryInterface::class)->clearOldViews();
         // })->daily();
         $schedule->command('model:prune')->daily();
-        $schedule->command('orders:process-recurring')->hourly();
+        $schedule->command('orders:process-recurring')->hourly()->withoutOverlapping();
         $schedule->command('push:deduction-reminders')->everyMinute();
         $schedule->command('ambassador:evaluate-rewards')->daily();
     }

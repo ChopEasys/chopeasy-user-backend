@@ -176,6 +176,10 @@ class ProcessRecurringOrders extends Command
                 }
     
             } else {
+
+                // A failed attempt must move the due date forward too. Otherwise
+                // the hourly scheduler retries this same daily plan every hour.
+                $order->save();
     
                 Transaction::create([
                     'user_id' => $user->id,
