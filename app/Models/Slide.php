@@ -10,6 +10,8 @@ class Slide extends Model
         'title',
         'description',
         'button_text',
+        'layout',
+        'background_color',
         'image_path',
         'type',
         'order',

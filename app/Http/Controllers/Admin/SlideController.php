@@ -34,6 +34,8 @@ class SlideController extends Controller
                     'title' => $slide->title,
                     'description' => $slide->description,
                     'button_text' => $slide->button_text,
+                    'layout' => $slide->layout,
+                    'background_color' => $slide->background_color,
                     'image_url' => $slide->image_path, // ImageKit returns full URL
                     'type' => $slide->type,
                     'url' => $slide->url,
@@ -61,29 +63,35 @@ class SlideController extends Controller
             'title' => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'button_text' => 'nullable|string|max:80',
-              'image' => 'required|file|mimes:jpeg,png,jpg,gif,svg,webp|max:5120', 
+            'layout' => 'nullable|in:split,image_top,text_only',
+            'background_color' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+            'image' => 'nullable|file|mimes:jpeg,png,jpg,gif,svg,webp|max:5120',
             'type' => 'required|in:customer,vendor,rider',
             'order' => 'nullable|integer|min:0',
             'is_active' => 'nullable',
             'url' => 'nullable|url',
         ]);
 
-        // Upload image to ImageKit
-        $imageUrl = ImageKitHelper::uploadFile(
-            $request->file('image'),
-            'slide_' . time() . '_' . str_replace(' ', '_', $request->title ?? 'unnamed')
-        );
+        $imageUrl = null;
+        if ($request->hasFile('image')) {
+            $imageUrl = ImageKitHelper::uploadFile(
+                $request->file('image'),
+                'slide_' . time() . '_' . str_replace(' ', '_', $request->title ?? 'unnamed')
+            );
 
-        if (!$imageUrl) {
-            return response()->json([
-                'message' => 'Failed to upload image to ImageKit'
-            ], 500);
+            if (!$imageUrl) {
+                return response()->json([
+                    'message' => 'Failed to upload image to ImageKit'
+                ], 500);
+            }
         }
 
         $slide = Slide::create([
             'title' => $request->title,
             'description' => $request->description,
             'button_text' => $request->button_text,
+            'layout' => $request->input('layout', 'text_only'),
+            'background_color' => $request->input('background_color', '#FFC107'),
             'image_path' => $imageUrl,
             'type' => $request->type,
             'order' => $request->order ?? 0,
@@ -105,6 +113,8 @@ class SlideController extends Controller
             'title' => 'sometimes|nullable|string|max:255',
             'description' => 'sometimes|nullable|string',
             'button_text' => 'sometimes|nullable|string|max:80',
+            'layout' => 'sometimes|required|in:split,image_top,text_only',
+            'background_color' => ['sometimes', 'required', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'image' => 'sometimes|nullable|file|mimes:jpeg,png,jpg,gif,svg,webp|max:5120',
  
             'type' => 'sometimes|required|in:customer,vendor,rider',
@@ -129,7 +139,7 @@ class SlideController extends Controller
             $slide->image_path = $imageUrl;
         }
 
-        $slide->update($request->only(['title', 'description', 'button_text', 'type', 'order', 'is_active', 'url']));
+        $slide->update($request->only(['title', 'description', 'button_text', 'layout', 'background_color', 'type', 'order', 'is_active', 'url']));
 
         return response()->json(['data' => $slide]);
     }
