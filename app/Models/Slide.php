@@ -9,6 +9,7 @@ class Slide extends Model
     protected $fillable = [
         'title',
         'description',
+        'button_text',
         'image_path',
         'type',
         'order',

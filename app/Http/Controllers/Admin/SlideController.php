@@ -33,8 +33,10 @@ class SlideController extends Controller
                     'id' => $slide->id,
                     'title' => $slide->title,
                     'description' => $slide->description,
+                    'button_text' => $slide->button_text,
                     'image_url' => $slide->image_path, // ImageKit returns full URL
                     'type' => $slide->type,
+                    'url' => $slide->url,
                 ];
             });
 
@@ -58,6 +60,7 @@ class SlideController extends Controller
         $request->validate([
             'title' => 'nullable|string|max:255',
             'description' => 'nullable|string',
+            'button_text' => 'nullable|string|max:80',
               'image' => 'required|file|mimes:jpeg,png,jpg,gif,svg,webp|max:5120', 
             'type' => 'required|in:customer,vendor,rider',
             'order' => 'nullable|integer|min:0',
@@ -80,6 +83,7 @@ class SlideController extends Controller
         $slide = Slide::create([
             'title' => $request->title,
             'description' => $request->description,
+            'button_text' => $request->button_text,
             'image_path' => $imageUrl,
             'type' => $request->type,
             'order' => $request->order ?? 0,
@@ -98,9 +102,10 @@ class SlideController extends Controller
         $slide = Slide::findOrFail($id);
 
         $request->validate([
-            'title' => 'sometimes|required|string|max:255',
-            'description' => 'sometimes|required|string',
-              'image' => 'required|file|mimes:jpeg,png,jpg,gif,svg,webp|max:5120', 
+            'title' => 'sometimes|nullable|string|max:255',
+            'description' => 'sometimes|nullable|string',
+            'button_text' => 'sometimes|nullable|string|max:80',
+            'image' => 'sometimes|nullable|file|mimes:jpeg,png,jpg,gif,svg,webp|max:5120',
  
             'type' => 'sometimes|required|in:customer,vendor,rider',
             'order' => 'nullable|integer|min:0',
@@ -124,7 +129,7 @@ class SlideController extends Controller
             $slide->image_path = $imageUrl;
         }
 
-        $slide->update($request->only(['title', 'description', 'type', 'order', 'is_active', 'url']));
+        $slide->update($request->only(['title', 'description', 'button_text', 'type', 'order', 'is_active', 'url']));
 
         return response()->json(['data' => $slide]);
     }
