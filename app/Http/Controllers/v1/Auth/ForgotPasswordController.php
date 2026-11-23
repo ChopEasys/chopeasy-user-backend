@@ -40,7 +40,7 @@ class ForgotPasswordController extends Controller
 
             // Send OTP notification
             try {
-                $user->notify(new EmailOtpNotification($user, $otp));
+                $user->notify(new EmailOtpNotification($user, $otp, 'password_reset'));
             } catch (\Throwable $e) {
                 Log::info($e);
                 return JsonResponser::send(true, 'Failed to send OTP email.', null, 500);

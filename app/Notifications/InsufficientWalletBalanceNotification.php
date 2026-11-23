@@ -23,10 +23,6 @@ class InsufficientWalletBalanceNotification extends Notification
 
     public function toMail($notifiable)
     {
-        $amount = number_format($this->amount, 2);
-        $orderNumber = $this->order->order_number ?? $this->order->id;
-        $paymentType = ucfirst($this->order->payment_type ?? 'installment');
-
         $nextDueLabel = 'as soon as you top up';
         if ($this->order->next_due_date) {
             $nextDueLabel = $this->order->next_due_date instanceof \Carbon\CarbonInterface
@@ -41,11 +37,13 @@ class InsufficientWalletBalanceNotification extends Notification
 
         return (new MailMessage)
             ->subject('Top up your wallet to continue your food plan')
-            ->greeting("Hi {$name}")
-            ->line("We couldn't process your {$paymentType} installment of NGN {$amount} for order {$orderNumber} because your main wallet balance is low.")
-            ->line('Please top up your main wallet to keep your food plan on track.')
-            ->line("Next due date: {$nextDueLabel}")
-            ->action('Top Up Wallet', 'https://www.chopeasy.ng')
-            ->salutation('Thanks, ChopEasy');
+            ->view('emails.insufficient-wallet-balance', [
+                'name' => $name,
+                'amount' => number_format($this->amount, 2),
+                'orderNumber' => $this->order->order_number ?? $this->order->id,
+                'paymentType' => ucfirst($this->order->payment_type ?? 'installment'),
+                'nextDueLabel' => $nextDueLabel,
+                'walletUrl' => 'https://www.chopeasy.ng',
+            ]);
     }
 }

@@ -1,77 +1,20 @@
-<!DOCTYPE html>
-<html lang="en">
+@extends('emails.layout')
 
-<head>
-    <meta charset="UTF-8">
-    <title>Verify Your Email</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f8f9fa;
-            color: #212529;
-            margin: 0;
-            padding: 0;
-        }
+@php
+    $name = trim(($user->firstname ?? '') . ' ' . ($user->lastname ?? ''));
+    if ($name === '') $name = $user->fullname ?? 'there';
+@endphp
 
-        .container {
-            max-width: 600px;
-            margin: 30px auto;
-            padding: 30px;
-            background-color: #ffffff;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-        }
+@section('title', 'Verify your ChopEasy email')
+@section('preheader', 'Confirm your email address to finish setting up ChopEasy.')
 
-        h2 {
-            color: #343a40;
-        }
-
-        p {
-            font-size: 16px;
-            line-height: 1.6;
-            margin: 15px 0;
-        }
-
-        .btn {
-            display: inline-block;
-            padding: 12px 24px;
-            background-color: #3490dc;
-            color: #ffffff !important;
-            text-decoration: none;
-            border-radius: 6px;
-            font-weight: bold;
-            margin: 20px 0;
-        }
-
-        .footer {
-            font-size: 14px;
-            color: #6c757d;
-            margin-top: 30px;
-            border-top: 1px solid #e9ecef;
-            padding-top: 15px;
-        }
-    </style>
-</head>
-
-<body>
-    <div class="container">
-        <h2>Hello {{ $user->firstname }} {{ $user->lastname }},</h2>
-
-        <p>
-            Thank you for registering with us. Please click the button below to verify your email address:
-        </p>
-
-        <a href="{{ $verificationUrl }}" class="btn">Verify Email</a>
-
-        <p>
-            If you didn’t create an account, you can safely ignore this email.
-        </p>
-
-        <div class="footer">
-            Regards,<br>
-           Chopeasy Nigeria Limited
-        </div>
-    </div>
-</body>
-
-</html>
+@section('content')
+    <h1 style="margin:0 0 18px;font-size:24px;line-height:1.3;color:#222;">Welcome to ChopEasy</h1>
+    <p style="margin:0 0 14px;">Hi {{ $name }},</p>
+    <p style="margin:0 0 22px;">Thanks for joining ChopEasy. Verify your email address to finish setting up your account.</p>
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 22px;">
+        <tr><td align="center" bgcolor="#ffc107" style="border-radius:8px;"><a href="{{ $verificationUrl }}" style="display:inline-block;padding:13px 24px;color:#222;text-decoration:none;font-weight:700;">Verify email address</a></td></tr>
+    </table>
+    <p style="margin:0;font-size:13px;color:#6b7280;">If the button does not work, copy and paste this link into your browser:<br><a href="{{ $verificationUrl }}" style="color:#8a6500;word-break:break-all;">{{ $verificationUrl }}</a></p>
+    <p style="margin:18px 0 0;font-size:13px;color:#6b7280;">If you did not create a ChopEasy account, you can ignore this email.</p>
+@endsection

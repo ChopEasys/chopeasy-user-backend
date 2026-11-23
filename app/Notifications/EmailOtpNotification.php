@@ -13,7 +13,7 @@ class EmailOtpNotification extends Notification implements ShouldQueue
     /**
      * Create a new notification instance.
      */
-    public function __construct(public $user, public $otp) {}
+    public function __construct(public $user, public $otp, public string $purpose = 'email_verification') {}
 
     /**
      * Get the notification's delivery channels.
@@ -31,10 +31,11 @@ class EmailOtpNotification extends Notification implements ShouldQueue
     public function toMail($notifiable)
     {
         return (new \Illuminate\Notifications\Messages\MailMessage)
-            ->subject('Verify Your Email with OTP')
+            ->subject($this->purpose === 'password_reset' ? 'Reset your ChopEasy password' : 'Verify your ChopEasy email')
             ->view('emails.verify-otp', [
                 'user' => $this->user,
                 'otp' => $this->otp,
+                'purpose' => $this->purpose,
             ]);
     }
 

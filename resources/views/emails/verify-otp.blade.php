@@ -1,74 +1,30 @@
-<!DOCTYPE html>
-<html lang="en">
+@extends('emails.layout')
 
-<head>
-    <meta charset="UTF-8">
-    <title>Your OTP Code</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f8f9fa;
-            color: #212529;
-            margin: 0;
-            padding: 0;
-        }
+@php
+    $name = trim(($user->firstname ?? '') . ' ' . ($user->lastname ?? ''));
+    if ($name === '') $name = $user->fullname ?? 'there';
+    $isPasswordReset = ($purpose ?? 'email_verification') === 'password_reset';
+@endphp
 
-        .container {
-            max-width: 600px;
-            margin: 30px auto;
-            padding: 30px;
-            background-color: #ffffff;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-        }
+@section('title', $isPasswordReset ? 'Reset your ChopEasy password' : 'Verify your ChopEasy email')
+@section('preheader', 'Your ChopEasy one-time code expires in 10 minutes.')
 
-        h2 {
-            color: #343a40;
-        }
-
-        p {
-            font-size: 16px;
-            line-height: 1.6;
-            margin: 15px 0;
-        }
-
-        .otp-code {
-            display: inline-block;
-            padding: 15px 30px;
-            background-color: #28a745;
-            color: #ffffff;
-            font-size: 24px;
-            font-weight: bold;
-            border-radius: 6px;
-            margin: 20px 0;
-            letter-spacing: 2px;
-        }
-
-        .footer {
-            font-size: 14px;
-            color: #6c757d;
-            margin-top: 30px;
-            border-top: 1px solid #e9ecef;
-            padding-top: 15px;
-        }
-    </style>
-</head>
-
-<body>
-    <div class="container">
-        <h2>Hello {{ $user->firstname }} {{ $user->lastname }},</h2>
-
-        <p> Please use the OTP below to verify your email address. It will expire in 10 minutes.</p>
-
-        <div class="otp-code">{{ $otp }}</div>
-
-        <p>If you did not request this code, you can safely ignore this email.</p>
-
-        <div class="footer">
-            Regards,<br>
-            ChopEasy Ltd
-        </div>
-    </div>
-</body>
-
-</html>
+@section('content')
+    <h1 style="margin:0 0 18px;font-size:24px;line-height:1.3;color:#222;">
+        {{ $isPasswordReset ? 'Reset your password' : 'Verify your email' }}
+    </h1>
+    <p style="margin:0 0 14px;">Hi {{ $name }},</p>
+    <p style="margin:0 0 22px;">
+        {{ $isPasswordReset
+            ? 'Use this one-time code to reset your ChopEasy password.'
+            : 'Use this one-time code to verify your ChopEasy email address.' }}
+        It expires in <strong>10 minutes</strong>.
+    </p>
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 22px;">
+        <tr><td align="center" style="padding:15px 28px;background:#fff7d6;border:1px solid #ffe08a;border-radius:10px;font-size:32px;font-weight:800;letter-spacing:8px;color:#222;">{{ $otp }}</td></tr>
+    </table>
+    <p style="margin:0 0 8px;font-size:13px;color:#6b7280;">Enter the code in the ChopEasy app to continue.</p>
+    <p style="margin:18px 0 0;padding-top:16px;border-top:1px solid #e5e7eb;font-size:13px;color:#6b7280;">
+        If you did not request this, you can ignore this email. Never share your code with anyone.
+    </p>
+@endsection
