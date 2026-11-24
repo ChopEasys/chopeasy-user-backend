@@ -37,6 +37,7 @@ use App\Http\Controllers\Admin\AdminAgentCommissionController;
 use App\Http\Controllers\Admin\AdminAgentCommissionReportController;
 use App\Http\Controllers\Admin\AdminRevenueController;
 use App\Http\Controllers\Admin\AdminNotificationController;
+use App\Http\Controllers\Admin\AdminNotificationBroadcastController;
 use App\Http\Controllers\Admin\SlideController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\PermissionController;
@@ -224,6 +225,9 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
         Route::get('/admin/revenue', [AdminRevenueController::class, 'index']);
         Route::get('/admin/revenue/{orderId}', [AdminRevenueController::class, 'show']);
         Route::get('/admin/notifications', [AdminNotificationController::class, 'index']);
+        Route::get('/admin/notification-automations', [AdminNotificationBroadcastController::class, 'automations']);
+        Route::put('/admin/notification-automations/{audience}', [AdminNotificationBroadcastController::class, 'updateAutomation']);
+        Route::post('/admin/notification-broadcasts', [AdminNotificationBroadcastController::class, 'send']);
 
         // Admin Pricing Management
         Route::prefix('admin')->group(function () {
@@ -232,6 +236,7 @@ Route::post('request-tier-upgrade', [AgentController::class, 'requestTierUpgrade
             Route::post('pricing-config', [PricingConfigController::class, 'store']);
             Route::get('pricing-config/{pricingConfig}', [PricingConfigController::class, 'show']);
             Route::patch('pricing-config/{pricingConfig}', [PricingConfigController::class, 'update']);
+            Route::patch('pricing-config/{pricingConfig}/below-threshold-weight-rate', [PricingConfigController::class, 'updateBelowThresholdWeightRate']);
             Route::delete('pricing-config/{pricingConfig}', [PricingConfigController::class, 'destroy']);
             Route::post('pricing-config/{pricingConfig}/toggle-active', [PricingConfigController::class, 'toggleActive']);
             Route::post('pricing-preview', [PricingConfigController::class, 'preview']);

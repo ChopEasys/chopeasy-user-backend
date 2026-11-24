@@ -50,7 +50,7 @@ class PricingService
         );
 
         $breakdown['payout_breakdown'] = $this->calculatePayouts($breakdown);
-        $breakdown['metadata'] = $this->getMetadata();
+        $breakdown['metadata'] = $this->getMetadata($breakdown['weight_price_per_kg'] ?? null);
 
         return $breakdown;
     }
@@ -74,16 +74,23 @@ class PricingService
         $productMarkupTotal = max($resolvedCustomerSubtotal - $resolvedVendorSubtotal, 0);
 
         $baseFee = (float) $this->pricingConfig->base_charge;
-        $weightFee = $this->weightTier->calculateWeightFee($totalWeight);
-
         // Determine if base fee applies based on configurable threshold
         $baseFeeThreshold = (float) ($this->pricingConfig->base_fee_threshold ?? 20000);
         $baseFeeApplied = $resolvedCustomerSubtotal >= $baseFeeThreshold;
 
+        $belowThresholdPricePerKg = $this->pricingConfig->no_base_fee_weight_price_per_kg;
+        $weightPricePerKg = $this->weightTier->price_per_kg;
+        if (!$baseFeeApplied && $belowThresholdPricePerKg !== null) {
+            $weightPricePerKg = (float) $belowThresholdPricePerKg;
+            $weightFee = round($totalWeight * $weightPricePerKg, 2);
+        } else {
+            $weightFee = $this->weightTier->calculateWeightFee($totalWeight);
+        }
+
         // Use different platform % based on whether base fee is applied
         $platformPct = max(0, min(100, (float) ($this->weightTier->platform_percentage ?? 0)));
         if (!$baseFeeApplied) {
-            // Higher platform % when base fee is waived (order is below threshold)
+            // Use the configured no-base-fee platform share when the order is below threshold
             $noBaseFeePlatformPct = (float) ($this->pricingConfig->no_base_fee_platform_percentage ?? 60);
             $platformPct = max(0, min(100, $noBaseFeePlatformPct));
         }
@@ -114,7 +121,7 @@ class PricingService
             'weight_platform_percentage' => round($platformPct, 2),
             'weight_fee_platform_take' => $weightFeePlatformTake,
             'weight_fee_rider_share' => $weightFeeRiderShare,
-            'weight_price_per_kg' => $this->weightTier->price_per_kg ?? null,
+            'weight_price_per_kg' => $weightPricePerKg,
             'distance_fee' => round($distanceFee, 2),
             'distance_charge_total' => round($distanceFee, 2),
             'distance_zone' => $zone?->zone_name,
@@ -212,10 +219,10 @@ class PricingService
         }
     }
 
-    private function getMetadata(): array
+    private function getMetadata(?float $effectiveWeightPricePerKg = null): array
     {
-        $weightRange = isset($this->weightTier->price_per_kg)
-            ? "NGN {$this->weightTier->price_per_kg}/kg"
+        $weightRange = $effectiveWeightPricePerKg !== null
+            ? "NGN {$effectiveWeightPricePerKg}/kg"
             : "{$this->weightTier->min_weight}kg - {$this->weightTier->max_weight}kg";
 
         return [

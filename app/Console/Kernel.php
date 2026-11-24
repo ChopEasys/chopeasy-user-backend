@@ -14,6 +14,7 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\UpdateTrendingProducts::class,
         \App\Console\Commands\DeductionReminderCommand::class,
         \App\Console\Commands\EvaluateAmbassadorRewardsCommand::class,
+        \App\Console\Commands\SendAutomatedAdminNotifications::class,
     ];
 
     /**
@@ -33,6 +34,7 @@ class Kernel extends ConsoleKernel
         $schedule->command('orders:process-recurring')->hourly()->withoutOverlapping();
         $schedule->command('push:deduction-reminders')->everyMinute();
         $schedule->command('ambassador:evaluate-rewards')->daily();
+        $schedule->command('notifications:send-admin-automations')->everyMinute()->withoutOverlapping();
     }
 
     /**

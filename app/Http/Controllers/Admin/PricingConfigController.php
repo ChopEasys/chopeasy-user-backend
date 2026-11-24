@@ -120,6 +120,21 @@ class PricingConfigController extends Controller
         }
     }
 
+    /** Update the optional below-threshold per-kilogram weight rate. */
+    public function updateBelowThresholdWeightRate(Request $request, PricingConfig $pricingConfig): JsonResponse
+    {
+        $data = $request->validate([
+            'no_base_fee_weight_price_per_kg' => 'present|nullable|numeric|min:0',
+        ]);
+
+        $pricingConfig->update($data);
+
+        return response()->json([
+            'success' => true,
+            'data' => $pricingConfig->fresh(),
+        ]);
+    }
+
     /**
      * Delete a pricing configuration
      */
