@@ -33,11 +33,19 @@ class OrderPricingController extends Controller
                 $calculated['vendor_subtotal']
             );
 
-            // The browser only needs customer-facing totals. Keep internal vendor,
-            // rider, platform-revenue, and pricing-configuration details server-side.
+            // Keep the existing customer-facing fields and return the full server
+            // pricing result so estimates expose the same detailed breakdown again.
             $productSubtotal = (float) $pricing['customer_product_subtotal'];
             $deliveryFee = (float) ($pricing['delivery_fee_total'] ?? $pricing['total_charge'] ?? 0);
             $serviceFee = (float) ($pricing['service_fee_total'] ?? $pricing['service_charge_total'] ?? 0);
+            $fullPricing = array_merge($pricing, [
+                'customer_product_subtotal' => $productSubtotal,
+                'delivery_fee_total' => $deliveryFee,
+                'total_charge' => $deliveryFee,
+                'service_fee_total' => $serviceFee,
+                'service_charge_total' => $serviceFee,
+                'total_to_pay' => $productSubtotal + $deliveryFee + $serviceFee,
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -45,16 +53,13 @@ class OrderPricingController extends Controller
                 'data' => [
                     'order_summary' => [
                         'item_count' => $calculated['item_count'],
+                        'total_weight_kg' => $calculated['total_weight'],
+                        'distance_km' => $distance,
                         'product_subtotal' => $productSubtotal,
+                        'vendor_subtotal' => $calculated['vendor_subtotal'],
                     ],
-                    'pricing' => [
-                        'customer_product_subtotal' => $productSubtotal,
-                        'delivery_fee_total' => $deliveryFee,
-                        'total_charge' => $deliveryFee,
-                        'service_fee_total' => $serviceFee,
-                        'service_charge_total' => $serviceFee,
-                        'total_to_pay' => $productSubtotal + $deliveryFee + $serviceFee,
-                    ],
+                    'pricing' => $fullPricing,
+                    'breakdown_explanation' => $this->getPricingExplanation($fullPricing),
                 ],
             ]);
         } catch (Exception $e) {
