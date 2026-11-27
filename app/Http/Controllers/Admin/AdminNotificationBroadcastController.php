@@ -25,19 +25,32 @@ class AdminNotificationBroadcastController extends Controller
             'title' => 'nullable|string|max:120',
             'message' => 'nullable|string|max:2000',
             'enabled' => 'required|boolean',
-            'frequency' => 'required|in:hourly,daily,weekly,monthly',
+            'frequency' => 'required|in:hourly,daily,weekly,biweekly,monthly',
         ]);
         if ($data['enabled'] && (empty($data['title']) || empty($data['message']))) {
             return response()->json(['message' => 'Enter a title and message before enabling automatic notifications.'], 422);
         }
 
+        // Customer automation is a monthly no-deposit reminder; vendor automation
+        // is a two-week price review reminder. Keep these cadences fixed.
+        $data['frequency'] = match ($audience) {
+            'customer' => 'monthly',
+            'vendor' => 'biweekly',
+            default => $data['frequency'],
+        };
+
         $automation = AdminNotificationAutomation::firstOrNew(['audience' => $audience]);
         $automation->fill($data);
-        $automation->next_run_at = $data['enabled'] ? match ($data['frequency']) {
+        $automation->next_run_at = $data['enabled'] ? match ($audience) {
+            'customer' => now(),
+            'vendor' => now()->addWeeks(2),
+            default => match ($data['frequency']) {
             'hourly' => now()->addHour(),
             'weekly' => now()->addWeek(),
+            'biweekly' => now()->addWeeks(2),
             'monthly' => now()->addMonth(),
             default => now()->addDay(),
+            },
         } : null;
         $automation->save();
 

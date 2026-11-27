@@ -4,6 +4,8 @@ namespace App\Console\Commands;
 
 use App\Models\AdminNotificationAutomation;
 use App\Services\AdminNotificationBroadcastService;
+use App\Models\Transaction;
+use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +28,7 @@ class SendAutomatedAdminNotifications extends Command
                     $row->next_run_at = match ($row->frequency) {
                         'hourly' => now()->addHour(),
                         'weekly' => now()->addWeek(),
+                        'biweekly' => now()->addWeeks(2),
                         'monthly' => now()->addMonth(),
                         default => now()->addDay(),
                     };
@@ -34,7 +37,16 @@ class SendAutomatedAdminNotifications extends Command
                 });
 
                 if ($automation) {
-                    $broadcasts->send($audience, $automation->title, $automation->message);
+                    if ($audience === 'customer') {
+                        $broadcasts->sendToUsers(
+                            User::query()->where('user_type', 'customer')->where('is_active', true)
+                                ->where('created_at', '<=', now()->subMonth())
+                                ->whereNotIn('id', Transaction::query()->select('user_id')->where('type', 'deposit')->where('status', 'successful')),
+                            $audience, $automation->title, $automation->message, 'customer_funding_reminder'
+                        );
+                    } else {
+                        $broadcasts->send($audience, $automation->title, $automation->message);
+                    }
                 }
             });
         }

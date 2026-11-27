@@ -6,6 +6,7 @@ use App\Helpers\ImageKitHelper;
 use App\Models\Cart;
 use App\Models\Order;
 use App\Models\User;
+use App\Jobs\SendPushNotificationJob;
 use App\Notifications\EmailOtpNotification;
 use App\Repositories\User\UserInterface;
 use Illuminate\Support\Facades\Auth;
@@ -169,6 +170,16 @@ class UserService
 
         // Create user
         $user = $this->userInterface->create($data);
+
+        if ($user->user_type === 'customer') {
+            SendPushNotificationJob::dispatch($user->id, 'customer_welcome', [
+                'title' => 'Welcome to ChopEasy',
+                'body' => 'Welcome to ChopEasy! Explore nearby stores and enjoy convenient shopping.',
+                'message' => 'Welcome to ChopEasy! Explore nearby stores and enjoy convenient shopping.',
+                'type' => 'customer_welcome',
+                'audience' => 'customer',
+            ]);
+        }
 
         if ($bankData && $bankRelationName) {
             $filledBankFields = array_filter(
